@@ -33,7 +33,10 @@ async def fetch_wind(lat: float, lon: float, start: datetime, end: datetime) -> 
     params = {
         "latitude": lat,
         "longitude": lon,
-        "hourly": "wind_speed_10m,wind_gusts_10m,wind_direction_10m",
+        "hourly": (
+            "wind_speed_10m,wind_gusts_10m,wind_direction_10m,"
+            "precipitation_probability,precipitation,weather_code"
+        ),
         "wind_speed_unit": "kn",
         "timezone": "UTC",
         "start_date": start.date().isoformat(),
@@ -48,6 +51,9 @@ async def fetch_wind(lat: float, lon: float, start: datetime, end: datetime) -> 
             "wind_speed_10m": "wind_speed_kts",
             "wind_gusts_10m": "wind_gust_kts",
             "wind_direction_10m": "wind_dir_deg",
+            "precipitation_probability": "rain_prob_pct",
+            "precipitation": "rain_mm_hr",
+            "weather_code": "weather_code",
         },
     )
 

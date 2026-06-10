@@ -22,7 +22,7 @@ waypoint_type_enum = ENUM(
     "start", "intermediate", "destination", name="waypoint_type", create_type=False
 )
 constraint_type_enum = ENUM(
-    "wind", "wave", "current", "depth", "bridge", "time_budget",
+    "wind", "wave", "current", "depth", "bridge", "time_budget", "weather",
     name="constraint_type",
     create_type=False,
 )

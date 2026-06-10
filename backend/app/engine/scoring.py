@@ -168,6 +168,7 @@ class _Simulation:
         self.legs: list[LegResult] = []
         self.constraint_scores: list[int] = [100]
         self._wave_gap_noted = False
+        self._weather_reported: set[tuple[str, str]] = set()  # (leg, kind) dedupe
 
     def _check(
         self,
@@ -203,8 +204,59 @@ class _Simulation:
                 )
             )
 
+    # WMO weather codes: 95 = thunderstorm, 96/99 = thunderstorm with hail
+    THUNDERSTORM_CODES = {95, 96, 99}
+    RAIN_PROB_WARNING_PCT = 60.0
+
+    def _check_weather(self, wp_order: int, rec: dict, leg: str, when: datetime) -> None:
+        local = when.astimezone(when.tzinfo or timezone.utc)
+        code = rec.get("weather_code")
+        if code is not None and int(code) in self.THUNDERSTORM_CODES:
+            if (leg, "thunder") not in self._weather_reported:
+                self._weather_reported.add((leg, "thunder"))
+                self.constraint_scores.append(15)
+                self.drivers.append(
+                    Driver(
+                        constraint_type="weather",
+                        severity="violation",
+                        leg=leg,
+                        waypoint_order=wp_order,
+                        description=(
+                            f"thunderstorms forecast on the {leg} leg "
+                            f"(waypoint {wp_order}, {local:%a %H:%M %Z}) — "
+                            f"lightning on open water is a No-Go"
+                        ),
+                    )
+                )
+            return  # thunder supersedes a plain rain warning for this leg
+
+        prob = rec.get("rain_prob_pct")
+        if (
+            prob is not None
+            and prob >= self.RAIN_PROB_WARNING_PCT
+            and (leg, "rain") not in self._weather_reported
+        ):
+            self._weather_reported.add((leg, "rain"))
+            # 60% -> 75, 100% -> 60: wet and miserable, not dangerous by itself
+            self.constraint_scores.append(int(75 - (prob - 60) / 40 * 15))
+            self.drivers.append(
+                Driver(
+                    constraint_type="weather",
+                    severity="warning",
+                    leg=leg,
+                    waypoint_order=wp_order,
+                    actual_value=prob,
+                    threshold_value=self.RAIN_PROB_WARNING_PCT,
+                    description=(
+                        f"rain {prob:.0f}% likely on the {leg} leg "
+                        f"(waypoint {wp_order}, {local:%a %H:%M %Z})"
+                    ),
+                )
+            )
+
     def _check_waypoint(self, wp_order: int, rec: dict, leg: str, when: datetime) -> None:
         b = self.boat
+        self._check_weather(wp_order, rec, leg, when)
         self._check("wind", rec.get("wind_speed_kts"), b.max_wind_kts, leg, wp_order, when, "wind kt")
         wave = rec.get("wave_height_ft")
         if wave is not None:

@@ -77,6 +77,32 @@
       <div id="suggestions" style="margin-top:8px"></div>
       <div id="drivers" style="margin-top:8px"></div>
       <div id="legs" style="margin-top:8px"></div>
+
+      <div id="manage" style="margin-top:12px">
+        <h2>Manage</h2>
+        <div class="row">
+          <button id="statusBtn"></button>
+          <button id="redrawBtn">Redraw route</button>
+          <button id="delBtn" style="background:#5c2330">Delete</button>
+        </div>
+        <div id="redrawBar" style="display:none; margin-top:6px">
+          <span class="hint">Click map to drop new pins: <b id="redrawCount">0</b></span>
+          <div class="row" style="margin-top:4px">
+            <button id="redrawCancel">Cancel</button>
+            <button id="redrawSave" class="primary">Save route</button>
+          </div>
+        </div>
+        <button id="editToggle" style="margin-top:6px">Edit details</button>
+        <form id="editForm" style="display:none; margin-top:6px; flex-direction:column; gap:6px">
+          <label>Name</label><input id="eName">
+          <div class="row">
+            <div><label>Departure</label><input id="eDep" type="datetime-local"></div>
+            <div><label>Return by</label><input id="eRet" type="datetime-local"></div>
+          </div>
+          <label>Hours at destination</label><input id="eStay" type="number" min="0" step="0.5">
+          <button type="submit" class="primary">Save changes</button>
+        </form>
+      </div>
     </div>
   </div>
   <div id="map"></div>
@@ -138,12 +164,81 @@ function drawRoute(waypoints) {
 
 async function selectTrip(id) {
   selectedTrip = await api('/trips/'+id);
-  newTripMode=false; $('newTripForm').style.display='none';
+  newTripMode=false; redrawMode=false; $('newTripForm').style.display='none';
   $('scorePanel').style.display='block';
   drawRoute(selectedTrip.waypoints);
   renderScoreSummary();
+  renderManage();
   loadTrips();
 }
+
+function renderManage() {
+  const st = selectedTrip.status;
+  $('statusBtn').style.display = (st==='planning'||st==='active') ? '' : 'none';
+  $('statusBtn').textContent = st==='planning' ? 'Activate' : 'Mark completed';
+  $('redrawBtn').style.display = st==='planning' ? '' : 'none';
+  $('editToggle').style.display = st==='planning' ? '' : 'none';
+  $('editForm').style.display = 'none';
+  $('redrawBar').style.display = 'none';
+}
+
+$('delBtn').onclick = async () => {
+  if (!selectedTrip || !confirm(`Delete "${selectedTrip.name||'this trip'}"?`)) return;
+  await api('/trips/'+selectedTrip.id, {method:'DELETE'});
+  selectedTrip = null; $('scorePanel').style.display='none'; routeLayer.clearLayers();
+  loadTrips(); status('Trip deleted.');
+};
+
+$('statusBtn').onclick = async () => {
+  const next = selectedTrip.status==='planning' ? 'active' : 'completed';
+  try { await api(`/trips/${selectedTrip.id}/status`, {method:'PUT', body:JSON.stringify({status:next})});
+        await selectTrip(selectedTrip.id); }
+  catch(e) { status(e.message); }
+};
+
+const isoToLocal = iso => { const d=new Date(iso); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
+
+$('editToggle').onclick = () => {
+  const f = $('editForm');
+  if (f.style.display==='none') {
+    f.style.display='flex';
+    $('eName').value = selectedTrip.name||'';
+    $('eDep').value = isoToLocal(selectedTrip.departure_time);
+    $('eRet').value = isoToLocal(selectedTrip.return_by_time);
+    $('eStay').value = selectedTrip.time_at_destination_hrs;
+  } else f.style.display='none';
+};
+
+$('editForm').onsubmit = async e => {
+  e.preventDefault();
+  try {
+    await api('/trips/'+selectedTrip.id, {method:'PUT', body: JSON.stringify({
+      boat_id: selectedTrip.boat_id,
+      name: $('eName').value || null,
+      departure_location: selectedTrip.departure_location,
+      destination_location: selectedTrip.destination_location,
+      departure_time: new Date($('eDep').value).toISOString(),
+      return_by_time: new Date($('eRet').value).toISOString(),
+      time_at_destination_hrs: +$('eStay').value,
+    })});
+    await selectTrip(selectedTrip.id); status('Saved — re-score to update.');
+  } catch(err) { status('Save failed: '+err.message); }
+};
+
+let redrawMode = false;
+$('redrawBtn').onclick = () => {
+  redrawMode = true; newTripPins = []; routeLayer.clearLayers();
+  $('redrawBar').style.display=''; $('redrawCount').textContent='0';
+};
+$('redrawCancel').onclick = () => { redrawMode=false; $('redrawBar').style.display='none'; drawRoute(selectedTrip.waypoints); };
+$('redrawSave').onclick = async () => {
+  if (newTripPins.length < 2) { status('Need at least 2 pins'); return; }
+  try {
+    await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints:newTripPins})});
+    redrawMode=false; $('redrawBar').style.display='none';
+    await selectTrip(selectedTrip.id); status('Route updated — re-score to update.');
+  } catch(e) { status('Route save failed: '+e.message); }
+};
 
 function renderScoreSummary() {
   const s = selectedTrip.current_score;
@@ -198,6 +293,7 @@ $('tUndo').onclick = () => { newTripPins.pop(); redrawPins(); };
 function redrawPins() {
   drawRouteFromPins();
   $('wpCount').textContent = newTripPins.length;
+  $('redrawCount').textContent = newTripPins.length;
 }
 function drawRouteFromPins() {
   routeLayer.clearLayers();
@@ -206,7 +302,7 @@ function drawRouteFromPins() {
   newTripPins.forEach((p,i)=> L.circleMarker([p.lat,p.lon],{radius:6,color:i===0?'#52d273':'#4cc9f0',fillOpacity:.9}).addTo(routeLayer));
 }
 map.on('click', e => {
-  if (!newTripMode) return;
+  if (!newTripMode && !redrawMode) return;
   newTripPins.push({lat:+e.latlng.lat.toFixed(5), lon:+e.latlng.lng.toFixed(5)});
   redrawPins();
 });

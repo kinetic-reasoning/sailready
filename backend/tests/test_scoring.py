@@ -113,6 +113,39 @@ def test_foul_current_slows_return():
     assert any(d.is_interpolated for d in current_drivers)
 
 
+def test_afternoon_thunderstorm_is_nogo():
+    """Classic Florida: clear morning, thunderstorm cell on the return."""
+
+    def afternoon_storms(i, t):
+        rec = dict(benign(i, t))
+        if t > DEP + timedelta(hours=4):
+            rec["weather_code"] = 95
+            rec["rain_prob_pct"] = 85.0
+        return rec
+
+    result = score_trip(BOAT, WPS, DEP, DEP + timedelta(hours=12), 1.0, afternoon_storms)
+    assert not result.feasible
+    assert result.score <= 15
+    storm = [d for d in result.drivers if d.constraint_type == "weather"]
+    assert any(d.severity == "violation" for d in storm)
+    assert all(d.leg == "return" for d in storm)  # morning was clean
+
+
+def test_rain_warns_but_can_still_go():
+    def rainy(i, t):
+        rec = dict(benign(i, t))
+        rec["rain_prob_pct"] = 75.0
+        rec["weather_code"] = 61  # plain rain, no thunder
+        return rec
+
+    result = score_trip(BOAT, WPS, DEP, DEP + timedelta(hours=12), 1.0, rainy)
+    assert result.feasible  # wet, not dangerous
+    assert 55 <= result.score < 85
+    assert any(
+        d.constraint_type == "weather" and d.severity == "warning" for d in result.drivers
+    )
+
+
 def test_missing_wave_data_noted_not_scored():
     def no_waves(i, t):
         rec = dict(benign(i, t))
