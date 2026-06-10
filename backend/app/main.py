@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import boats, feedback, notifications, routes, trips, users
+from app.api import boats, conditions, feedback, notifications, routes, trips, users
 from app.db import engine
 
 app = FastAPI(title="SailReady API", version="0.1.0")
@@ -15,6 +15,7 @@ app.include_router(trips.router, prefix=API_PREFIX)
 app.include_router(routes.router, prefix=API_PREFIX)
 app.include_router(feedback.router, prefix=API_PREFIX)
 app.include_router(notifications.router, prefix=API_PREFIX)
+app.include_router(conditions.router, prefix=API_PREFIX)
 
 
 # Starlette's HTTPException is the base class — registering the handler there

@@ -180,6 +180,24 @@ class TripFeedback(Base):
     submitted_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class ConditionsCache(Base):
+    """Shared (not user-scoped) cache of fetched forecast/prediction data,
+    keyed by source + snapped coordinate + valid hour."""
+
+    __tablename__ = "conditions_cache"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    source: Mapped[str]
+    lat: Mapped[Decimal]
+    lon: Mapped[Decimal]
+    valid_time: Mapped[datetime]
+    fetched_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    expires_at: Mapped[datetime]
+    data: Mapped[dict] = mapped_column(JSONB)
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 
