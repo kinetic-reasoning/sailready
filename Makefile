@@ -29,3 +29,9 @@ test:
 
 rescore:
 	docker compose run --rm api python -m app.jobs.rescore
+
+ingest-enc:
+	docker compose run --rm api python -m app.charts.ingest_enc data/enc
+
+warm-tiles:
+	docker compose run --rm api python -m app.charts.warm_tiles
