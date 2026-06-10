@@ -37,6 +37,8 @@
   td,th { padding:3px 4px; text-align:right; border-bottom:1px solid #2b3f5c; } th:first-child, td:first-child { text-align:left; }
   .hint { color:var(--muted); font-size:12px; }
   .sug { background:#1d3a4a; padding:6px 8px; border-radius:4px; font-size:12.5px; margin-bottom:5px; border-left:3px solid var(--accent); }
+  .viewbtn.active { background:var(--accent); color:#06283d; }
+  .map-legend { background:rgba(13,27,42,.85); color:var(--text); padding:8px 10px; border-radius:6px; font-size:11.5px; line-height:1.7; }
   #newTripForm { display:none; flex-direction:column; gap:8px; }
   label { font-size:12px; color:var(--muted); }
 </style>
@@ -76,6 +78,11 @@
       <h2>Go / No-Go</h2>
       <div id="scoreBig" class="score-big">—</div>
       <button id="scoreBtn" class="primary">Score this trip now</button>
+      <div id="legViewBar" class="row" style="margin-top:6px; display:none">
+        <button data-view="outbound" class="viewbtn">▸ Outbound</button>
+        <button data-view="return" class="viewbtn">◂ Return</button>
+        <button data-view="both" class="viewbtn">Both</button>
+      </div>
       <div id="scoreMeta" style="margin-top:8px"></div>
       <div id="suggestions" style="margin-top:8px"></div>
       <div id="measured" style="margin-top:8px"></div>
@@ -203,22 +210,35 @@ function drawRoute(waypoints) {
 }
 
 const MODE_COLOR = {motor:'#9aa5b1', sail:'#52d273', 'sail-tack':'#ffd166'};
+let legView = 'outbound';
+let lastScore = null;
+
+document.querySelectorAll('.viewbtn').forEach(b => b.onclick = () => {
+  legView = b.dataset.view;
+  document.querySelectorAll('.viewbtn').forEach(x => x.classList.toggle('active', x===b));
+  if (lastScore) drawScoreOverlay(lastScore);
+});
 
 function drawScoreOverlay(r) {
+  lastScore = r;
   scoreLayer.clearLayers();
+  $('legViewBar').style.display = 'flex';
+  document.querySelectorAll('.viewbtn').forEach(x => x.classList.toggle('active', x.dataset.view===legView));
   if (!selectedTrip || !selectedTrip.waypoints.length) return;
   const wp = o => selectedTrip.waypoints.find(w=>w.sequence_order===o);
-  r.legs.forEach(l => {
+  const visible = r.legs.filter(l => legView==='both' || l.leg===legView);
+  visible.forEach(l => {
     const a = wp(l.from_order), b = wp(l.to_order);
     if (!a || !b) return;
+    const windFrom = l.wind_dir_deg!=null ? ` · wind from ${Math.round(l.wind_dir_deg)}°` : '';
     L.polyline([[a.lat,a.lon],[b.lat,b.lon]], {
       color: MODE_COLOR[l.mode]||'#4cc9f0', weight: l.leg==='outbound'?5:3,
       dashArray: l.leg==='return'?'8 8':null, opacity:.9,
-    }).bindTooltip(`${l.leg} ${l.from_order}→${l.to_order}: ${l.mode}${l.point_of_sail?' · '+l.point_of_sail:''} · ${l.sog_kts}kt SOG`).addTo(scoreLayer);
-    // wind arrow at the midpoint of outbound legs, pointing where the wind blows TOWARD
-    if (l.leg==='outbound' && l.wind_dir_deg!=null) {
+    }).bindTooltip(`${l.leg} ${l.from_order}→${l.to_order}: ${l.mode}${l.point_of_sail?' · '+l.point_of_sail:''} · ${l.sog_kts}kt SOG${windFrom}`).addTo(scoreLayer);
+    // wind arrows: drawn for the visible direction; in Both view, outbound only
+    if ((legView==='both' ? l.leg==='outbound' : true) && l.wind_dir_deg!=null) {
       const mid = [(a.lat+b.lat)/2, (a.lon+b.lon)/2];
-      const rot = (l.wind_dir_deg+180-90); // CSS rotate: glyph ➤ points right (090°)
+      const rot = (l.wind_dir_deg+180-90); // arrow shows where wind BLOWS TOWARD; glyph ➤ points right (090°)
       const gustTxt = l.wind_gust_kts!=null && l.wind_gust_kts > (l.wind_speed_kts||0)+1 ? ` G${Math.round(l.wind_gust_kts)}` : '';
       L.marker(mid, {icon: L.divIcon({className:'', iconSize:[40,20], html:
         `<div style="transform:rotate(${rot}deg);font-size:18px;color:#4cc9f0;text-shadow:0 0 3px #000">➤</div>`+
@@ -227,6 +247,21 @@ function drawScoreOverlay(r) {
     }
   });
 }
+
+// map legend (bottom-left)
+const legendCtl = L.control({position:'bottomleft'});
+legendCtl.onAdd = () => {
+  const div = L.DomUtil.create('div', 'map-legend');
+  div.innerHTML =
+    '<b>Legend</b><br>'+
+    '➤ wind direction (blowing toward) · speed G gust<br>'+
+    '<span style="color:#52d273">━</span> sail &nbsp;'+
+    '<span style="color:#ffd166">━</span> beating &nbsp;'+
+    '<span style="color:#9aa5b1">━</span> motor<br>'+
+    'solid = outbound · dashed = return';
+  return div;
+};
+legendCtl.addTo(map);
 
 async function selectTrip(id) {
   selectedTrip = await api('/trips/'+id);
