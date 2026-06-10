@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: sailready
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sailready
+    ports:
+      - "127.0.0.1:5432:5432" # DB never exposed beyond the workstation
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sailready -d sailready"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      network: host # BuildKit's default build network has broken DNS on this host
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      # App connects as the RLS-constrained role, never the superuser
+      DATABASE_URL: postgresql+asyncpg://sailready_app:${APP_DB_PASSWORD}@db:5432/sailready
+      # Migrations run as the admin role (owns schema, applies RLS policies)
+      DATABASE_URL_ADMIN: postgresql+asyncpg://sailready:${POSTGRES_PASSWORD}@db:5432/sailready
+      AUTH_MODE: dev
+      DEV_USER_EMAIL: ken.e.holden@gmail.com
+      DEV_USER_NAME: Ken Holden
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "8025:8025" # web UI — LAN-visible so emails can be checked from other devices
+      - "127.0.0.1:1025:1025" # SMTP ingest — only the API container needs it
+
+volumes:
+  pgdata:

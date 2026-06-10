@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+
+# Env / secrets — never commit credentials
+.env
+.env.*
+!.env.example
+
+# Data downloads (ENC charts etc.)
+data/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
