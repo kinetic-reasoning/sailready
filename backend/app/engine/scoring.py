@@ -424,8 +424,6 @@ class _Simulation:
         tide_ft = rec.get("tide_height_ft") or 0.0
         available = wp.charted_min_depth_m * M_TO_FT + tide_ft
         required = b.draft_ft + GROUNDING_MARGIN_FT
-        if self._depth_worst_available_ft is None or available < self._depth_worst_available_ft:
-            self._depth_worst_available_ft = available
 
         local = when.astimezone(when.tzinfo or timezone.utc)
         detail = (
@@ -435,41 +433,39 @@ class _Simulation:
         )
         tide_interp = bool(rec.get("tide_is_interpolated"))
         ack = wp.depth_acknowledged  # local knowledge — never applies to land
-        if available <= 0:
-            if ack:
-                self.constraint_scores.append(60)
+
+        if ack:
+            # Acknowledged = informed, not penalized: the chart math still
+            # shows in the drivers (as a warning) but contributes NOTHING to
+            # the score, and is excluded from the summary's worst-depth row.
+            if available <= 0 or _severity(required / available) != "ok":
+                what = "chart says dries" if available <= 0 else "chart says"
                 self.drivers.append(
                     Driver(
                         constraint_type="depth", severity="warning", leg=leg,
                         waypoint_order=wp_order, actual_value=round(required, 1),
                         threshold_value=round(available, 1), is_interpolated=tide_interp,
-                        description=f"acknowledged (local knowledge) — chart says dries: {detail}",
-                    )
-                )
-            else:
-                self.constraint_scores.append(5)
-                self.drivers.append(
-                    Driver(
-                        constraint_type="depth", severity="violation", leg=leg,
-                        waypoint_order=wp_order, actual_value=round(required, 1),
-                        threshold_value=round(available, 1), is_interpolated=tide_interp,
-                        description=f"GROUNDING: dries at this tide — {detail}",
+                        description=f"acknowledged (local knowledge) — {what}: {detail}",
                     )
                 )
             return
-        ratio = required / available
-        sev = _severity(ratio)
-        if sev == "violation" and ack:
-            self.constraint_scores.append(65)
+
+        if self._depth_worst_available_ft is None or available < self._depth_worst_available_ft:
+            self._depth_worst_available_ft = available
+
+        if available <= 0:
+            self.constraint_scores.append(5)
             self.drivers.append(
                 Driver(
-                    constraint_type="depth", severity="warning", leg=leg,
+                    constraint_type="depth", severity="violation", leg=leg,
                     waypoint_order=wp_order, actual_value=round(required, 1),
                     threshold_value=round(available, 1), is_interpolated=tide_interp,
-                    description=f"acknowledged (local knowledge) — chart says: {detail}",
+                    description=f"GROUNDING: dries at this tide — {detail}",
                 )
             )
             return
+        ratio = required / available
+        sev = _severity(ratio)
         self.constraint_scores.append(_constraint_score(ratio))
         if sev != "ok":
             self.drivers.append(

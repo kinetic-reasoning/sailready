@@ -318,7 +318,19 @@ def test_acknowledged_depth_downgrades_violation_to_warning():
     assert depth and all(d.severity == "warning" for d in depth)
     assert all("acknowledged" in d.description for d in depth)
     assert result.feasible  # downgraded — no violations remain
-    assert result.score >= 60
+    # acknowledged = informed, not penalized: the score is untouched by depth
+    baseline = score_trip(
+        BOAT,
+        [
+            Waypoint(27.72, -82.40, "start", charted_min_depth_m=3.0),
+            Waypoint(27.66, -82.55, "deep here", charted_min_depth_m=3.0),
+            Waypoint(27.60, -82.70, "destination", charted_min_depth_m=3.0),
+        ],
+        DEP, DEP + timedelta(hours=12), 1.0, low_tide,
+    )
+    assert result.score == baseline.score
+    # and the summary's worst-depth row ignores acknowledged waypoints
+    assert result.conditions_summary["depth_need_vs_have_ft"]["limit"] > 4.5
 
 
 def test_land_cannot_be_acknowledged():
