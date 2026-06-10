@@ -155,9 +155,14 @@ class TripScore(Base):
     forecast_date: Mapped[date]
     score: Mapped[int]
     is_current: Mapped[bool] = mapped_column(server_default=text("true"))
+    feasible: Mapped[bool] = mapped_column(server_default=text("true"))
     turn_around_deadline: Mapped[datetime | None]
     max_reachable_distance_nm: Mapped[Decimal | None]
     suggestions: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    legs: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    conditions_summary: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    outbound_arrival: Mapped[datetime | None]
+    return_home: Mapped[datetime | None]
 
     drivers: Mapped[list["ScoreDriver"]] = relationship(
         cascade="all, delete-orphan", lazy="raise"

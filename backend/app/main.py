@@ -7,9 +7,27 @@ from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import boats, conditions, feedback, notifications, routes, scores, trips, users
-from app.db import engine
+from app.db import SessionLocal, engine
 
 app = FastAPI(title="SailReady API", version="0.1.0")
+
+
+@app.middleware("http")
+async def db_session_middleware(request: Request, call_next):
+    """Request-scoped DB session, committed BEFORE the response is sent so the
+    client's next request always sees this request's writes (see db.get_db)."""
+    async with SessionLocal() as session:
+        request.state.db = session
+        try:
+            response = await call_next(request)
+        except Exception:
+            await session.rollback()
+            raise
+        if response.status_code >= 400:
+            await session.rollback()
+        else:
+            await session.commit()
+        return response
 
 API_PREFIX = "/api/v1"
 app.include_router(users.router, prefix=API_PREFIX)

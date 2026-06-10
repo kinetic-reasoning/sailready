@@ -73,6 +73,17 @@ class LegResult:
     distance_nm: float
     sog_kts: float
     mode: str  # sail | motor
+    # everything the engine sampled to produce this leg — full transparency
+    course_deg: float = 0.0
+    boat_speed_kts: float = 0.0
+    current_along_kts: float = 0.0  # signed: + fair, - foul
+    wind_speed_kts: float | None = None
+    wind_dir_deg: float | None = None
+    wave_height_ft: float | None = None
+    rain_prob_pct: float | None = None
+    current_speed_kts: float | None = None
+    current_dir_deg: float | None = None
+    current_is_interpolated: bool = False
 
 
 @dataclass
@@ -86,6 +97,7 @@ class ScoreResult:
     turn_around_deadline: datetime | None
     max_reachable_distance_nm: float | None
     suggestions: list[dict] = field(default_factory=list)
+    conditions_summary: dict = field(default_factory=dict)  # measured vs limits
 
 
 def bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -317,6 +329,16 @@ class _Simulation:
                         distance_nm=round(distance, 2),
                         sog_kts=round(sog, 2),
                         mode=mode,
+                        course_deg=round(course),
+                        boat_speed_kts=round(speed, 2),
+                        current_along_kts=round(along, 2),
+                        wind_speed_kts=rec.get("wind_speed_kts"),
+                        wind_dir_deg=rec.get("wind_dir_deg"),
+                        wave_height_ft=rec.get("wave_height_ft"),
+                        rain_prob_pct=rec.get("rain_prob_pct"),
+                        current_speed_kts=rec.get("current_speed_kts"),
+                        current_dir_deg=rec.get("current_dir_deg"),
+                        current_is_interpolated=bool(rec.get("current_is_interpolated")),
                     )
                 )
             t = end
@@ -401,6 +423,32 @@ def score_trip(
     score = min(sim.constraint_scores)
     feasible = all(d.severity != "violation" for d in sim.drivers)
 
+    # --- measured-vs-limits summary: what was checked, not just what failed ---
+    def _max_of(values: list) -> float | None:
+        present = [v for v in values if v is not None]
+        return round(max(present), 2) if present else None
+
+    foul = [-leg.current_along_kts for leg in sim.legs if leg.current_along_kts < 0]
+    conditions_summary = {
+        "max_wind_kts": {
+            "value": _max_of([leg.wind_speed_kts for leg in sim.legs]),
+            "limit": boat.max_wind_kts,
+        },
+        "max_wave_ft": {
+            "value": _max_of([leg.wave_height_ft for leg in sim.legs]),
+            "limit": boat.max_wave_ft,
+        },
+        "max_rain_prob_pct": {
+            "value": _max_of([leg.rain_prob_pct for leg in sim.legs]),
+            "limit": _Simulation.RAIN_PROB_WARNING_PCT,
+        },
+        "max_adverse_current_kts": {
+            "value": _max_of(foul) or 0.0,
+            "limit": boat.max_adverse_current_kts,
+        },
+        "window_hours": {"value": round(used_hrs, 1), "limit": round(window_hrs, 1)},
+    }
+
     # --- suggestions (skipped in recursive probes) ----------------------------
     suggestions: list[dict] = []
     if _depth == 0:
@@ -451,4 +499,5 @@ def score_trip(
         turn_around_deadline=turn_around,
         max_reachable_distance_nm=max_reach,
         suggestions=suggestions,
+        conditions_summary=conditions_summary,
     )

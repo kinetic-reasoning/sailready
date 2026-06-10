@@ -139,10 +139,22 @@ async def _persist(db: AsyncSession, trip: Trip, result: ScoreResult) -> None:
 
     row.score = result.score
     row.is_current = True
+    row.feasible = result.feasible
     row.scored_at = now
     row.turn_around_deadline = result.turn_around_deadline
     row.max_reachable_distance_nm = result.max_reachable_distance_nm
     row.suggestions = result.suggestions
+    row.conditions_summary = result.conditions_summary
+    row.outbound_arrival = result.outbound_arrival
+    row.return_home = result.return_home
+    row.legs = [
+        {
+            **{k: v for k, v in vars(leg).items() if not isinstance(v, datetime)},
+            "start": leg.start.isoformat(),
+            "end": leg.end.isoformat(),
+        }
+        for leg in result.legs
+    ]
     await db.flush()
 
     for d in result.drivers:

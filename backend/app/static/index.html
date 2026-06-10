@@ -12,8 +12,11 @@
   header { padding:10px 16px; background:var(--panel); display:flex; align-items:center; gap:12px; }
   header h1 { font-size:18px; } header .tag { color:var(--muted); font-size:12px; }
   main { flex:1; display:flex; min-height:0; }
-  #sidebar { width:380px; overflow-y:auto; background:var(--panel); padding:14px; display:flex; flex-direction:column; gap:14px; }
+  #sidebar { width:420px; min-width:300px; max-width:760px; overflow-y:auto; background:var(--panel); padding:14px; display:flex; flex-direction:column; gap:14px; }
+  #dragbar { width:6px; cursor:col-resize; background:#2b3f5c; flex:none; }
+  #dragbar:hover { background:var(--accent); }
   #map { flex:1; }
+  .measure { display:flex; justify-content:space-between; font-size:12.5px; padding:3px 6px; border-radius:4px; background:#22324a; margin-bottom:4px; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:6px; }
   select,input,button,textarea { width:100%; padding:8px; border-radius:6px; border:1px solid #3a506b; background:#0d1b2a; color:var(--text); font-size:14px; }
   button { cursor:pointer; background:#274060; border:none; font-weight:600; }
@@ -75,6 +78,7 @@
       <button id="scoreBtn" class="primary">Score this trip now</button>
       <div id="scoreMeta" style="margin-top:8px"></div>
       <div id="suggestions" style="margin-top:8px"></div>
+      <div id="measured" style="margin-top:8px"></div>
       <div id="drivers" style="margin-top:8px"></div>
       <div id="legs" style="margin-top:8px"></div>
 
@@ -105,6 +109,7 @@
       </div>
     </div>
   </div>
+  <div id="dragbar"></div>
   <div id="map"></div>
 </main>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -170,6 +175,12 @@ async function selectTrip(id) {
   renderScoreSummary();
   renderManage();
   loadTrips();
+  // reload the persisted report so clicking away never loses the detail
+  try {
+    const history = await api(`/trips/${id}/scores`);
+    const current = history.find(h => h.is_current);
+    if (current) renderScore(current);
+  } catch(e) { /* no score yet */ }
 }
 
 function renderManage() {
@@ -244,27 +255,61 @@ function renderScoreSummary() {
   const s = selectedTrip.current_score;
   $('scoreBig').textContent = s==null?'—':s+'%';
   $('scoreBig').className = 'score-big '+(s==null?'':scoreClass(s));
-  $('scoreMeta').innerHTML = ''; $('drivers').innerHTML=''; $('legs').innerHTML=''; $('suggestions').innerHTML='';
+  $('scoreMeta').innerHTML = ''; $('drivers').innerHTML=''; $('legs').innerHTML=''; $('suggestions').innerHTML=''; $('measured').innerHTML='';
   $('scoreBtn').disabled = !selectedTrip.waypoints.length;
   if (!selectedTrip.waypoints.length)
     $('scoreMeta').innerHTML = '<span class="hint">This trip has no route waypoints.</span>';
 }
+
+const MEASURE_LABELS = {
+  max_wind_kts: ['Max wind', 'kt'],
+  max_wave_ft: ['Max waves', 'ft'],
+  max_rain_prob_pct: ['Max rain chance', '%'],
+  max_adverse_current_kts: ['Max adverse current', 'kt'],
+  window_hours: ['Time needed', 'h'],
+};
+
+function renderMeasured(summary) {
+  const rows = Object.entries(summary || {}).map(([key, m]) => {
+    const [label, unit] = MEASURE_LABELS[key] || [key, ''];
+    if (m.value == null) return `<div class="measure"><span>${label}</span><span class="hint">no data</span></div>`;
+    const ratio = m.limit ? m.value / m.limit : 0;
+    const cls = ratio > 1 ? 'r' : ratio >= 0.85 ? 'y' : 'g';
+    const icon = ratio > 1 ? '⛔' : ratio >= 0.85 ? '⚠️' : '✓';
+    return `<div class="measure"><span>${label}</span>
+      <b class="${cls}">${icon} ${m.value}${unit} <span class="hint">/ limit ${m.limit}${unit}</span></b></div>`;
+  }).join('');
+  $('measured').innerHTML = rows ? '<h2>Measured along your route</h2>'+rows : '';
+}
+
+const deg = d => d==null ? '–' : Math.round(d)+'°';
+const num = (v,unit='') => v==null ? '–' : v+unit;
 
 function renderScore(r) {
   $('scoreBig').textContent = r.score+'%';
   $('scoreBig').className = 'score-big '+scoreClass(r.score);
   $('scoreMeta').innerHTML = `
     <div class="kv"><span>Feasible</span><b class="${r.feasible?'g':'r'}">${r.feasible?'YES':'NO'}</b></div>
-    <div class="kv"><span>Arrive destination</span><b>${fmtT(r.outbound_arrival)}</b></div>
-    <div class="kv"><span>Back home</span><b>${fmtT(r.return_home)}</b></div>
+    <div class="kv"><span>Arrive destination</span><b>${r.outbound_arrival?fmtT(r.outbound_arrival):'–'}</b></div>
+    <div class="kv"><span>Back home</span><b>${r.return_home?fmtT(r.return_home):'–'}</b></div>
     <div class="kv"><span>Turn-around deadline</span><b>${r.turn_around_deadline?fmtT(r.turn_around_deadline):'n/a'}</b></div>
-    <div class="kv"><span>Max reachable distance</span><b>${r.max_reachable_distance_nm??'—'} nm</b></div>`;
+    <div class="kv"><span>Max reachable distance</span><b>${r.max_reachable_distance_nm??'—'} nm</b></div>
+    ${r.scored_at ? `<div class="kv"><span>Scored</span><b>${fmtT(r.scored_at)}</b></div>` : ''}`;
   $('suggestions').innerHTML = r.suggestions.map(s=>`<div class="sug">💡 ${s.description}</div>`).join('');
+  renderMeasured(r.conditions_summary);
   $('drivers').innerHTML = '<h2>Drivers</h2>' + (r.drivers.map(d=>
     `<div class="driver ${d.severity}">${d.severity==='violation'?'⛔':d.severity==='warning'?'⚠️':'ℹ️'} ${d.description}${d.is_interpolated?' <i>(interpolated)</i>':''}</div>`
   ).join('') || '<div class="driver ok">All checks within limits.</div>');
-  $('legs').innerHTML = '<h2>Legs</h2><table><tr><th>Leg</th><th>Start</th><th>nm</th><th>SOG</th><th>Mode</th></tr>'+
-    r.legs.map(l=>`<tr><td>${l.leg} ${l.from_order}→${l.to_order}</td><td>${fmtT(l.start)}</td><td>${l.distance_nm}</td><td>${l.sog_kts}</td><td>${l.mode}</td></tr>`).join('')+'</table>';
+  $('legs').innerHTML = '<h2>Legs — everything sampled</h2><table>'+
+    '<tr><th>Leg</th><th>Dep</th><th>Crs</th><th>nm</th><th>Wind</th><th>Wave</th><th>Rain</th><th>Cur±</th><th>Boat</th><th>SOG</th><th>Mode</th></tr>'+
+    r.legs.map(l=>{
+      const wind = l.wind_speed_kts!=null ? `${Math.round(l.wind_speed_kts)}kt@${deg(l.wind_dir_deg)}` : '–';
+      const cur = l.current_along_kts ? `${l.current_along_kts>0?'+':''}${l.current_along_kts}${l.current_is_interpolated?'*':''}` : '0';
+      return `<tr><td>${l.leg==='outbound'?'▸':'◂'} ${l.from_order}→${l.to_order}</td><td>${new Date(l.start).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</td>`+
+        `<td>${deg(l.course_deg)}</td><td>${l.distance_nm}</td><td>${wind}</td><td>${num(l.wave_height_ft,"'")}</td>`+
+        `<td>${num(l.rain_prob_pct,'%')}</td><td>${cur}</td><td>${l.boat_speed_kts}</td><td><b>${l.sog_kts}</b></td><td>${l.mode==='sail'?'⛵':'⚙️'}</td></tr>`;
+    }).join('')+'</table>'+
+    '<span class="hint">Crs = course to steer (true). Cur± = current along course, + fair / − foul, * = interpolated between station predictions. SOG = boat speed ± current.</span>';
 }
 
 $('scoreBtn').onclick = async () => {
@@ -327,6 +372,17 @@ $('newTripForm').onsubmit = async e => {
     status('Trip created — hit Score.');
   } catch(err) { status('Create failed: '+err.message); }
 };
+
+// --- resizable sidebar ---
+let dragging = false;
+$('dragbar').addEventListener('mousedown', () => { dragging = true; document.body.style.userSelect = 'none'; });
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  $('sidebar').style.width = Math.min(760, Math.max(300, e.clientX)) + 'px';
+});
+window.addEventListener('mouseup', () => {
+  if (dragging) { dragging = false; document.body.style.userSelect = ''; map.invalidateSize(); }
+});
 
 loadBoats(); loadTrips();
 </script>

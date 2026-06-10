@@ -38,28 +38,35 @@ class LegOut(BaseModel):
     distance_nm: float
     sog_kts: float
     mode: str
+    course_deg: float = 0.0
+    boat_speed_kts: float = 0.0
+    current_along_kts: float = 0.0
+    wind_speed_kts: float | None = None
+    wind_dir_deg: float | None = None
+    wave_height_ft: float | None = None
+    rain_prob_pct: float | None = None
+    current_speed_kts: float | None = None
+    current_dir_deg: float | None = None
+    current_is_interpolated: bool = False
 
 
 class ScoreOut(BaseModel):
     score: int
     feasible: bool
-    outbound_arrival: datetime
-    return_home: datetime
+    outbound_arrival: datetime | None
+    return_home: datetime | None
     turn_around_deadline: datetime | None
     max_reachable_distance_nm: float | None
     suggestions: list[dict]
     drivers: list[DriverOut]
     legs: list[LegOut]
+    conditions_summary: dict
 
 
-class ScoreHistoryOut(BaseModel):
+class ScoreHistoryOut(ScoreOut):
     forecast_date: str
     scored_at: datetime
-    score: int
     is_current: bool
-    turn_around_deadline: datetime | None
-    suggestions: list[dict]
-    drivers: list[DriverOut]
 
 
 def score_out(result: ScoreResult) -> ScoreOut:
@@ -73,6 +80,7 @@ def score_out(result: ScoreResult) -> ScoreOut:
         suggestions=result.suggestions,
         drivers=[DriverOut(**vars(d)) for d in result.drivers],
         legs=[LegOut(**vars(leg)) for leg in result.legs],
+        conditions_summary=result.conditions_summary,
     )
 
 
@@ -116,8 +124,18 @@ async def score_history(
             scored_at=row.scored_at,
             score=row.score,
             is_current=row.is_current,
+            feasible=row.feasible,
+            outbound_arrival=row.outbound_arrival,
+            return_home=row.return_home,
             turn_around_deadline=row.turn_around_deadline,
+            max_reachable_distance_nm=(
+                float(row.max_reachable_distance_nm)
+                if row.max_reachable_distance_nm is not None
+                else None
+            ),
             suggestions=row.suggestions,
+            conditions_summary=row.conditions_summary,
+            legs=[LegOut(**leg) for leg in row.legs],
             drivers=[
                 DriverOut(
                     constraint_type=d.constraint_type,
