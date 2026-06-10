@@ -366,8 +366,10 @@ const MEASURE_LABELS = {
   max_wave_ft: ['Max waves', 'ft'],
   max_rain_prob_pct: ['Max rain chance', '%'],
   max_adverse_current_kts: ['Max adverse current', 'kt'],
+  depth_need_vs_have_ft: ['Depth: need vs shallowest', 'ft'],
   window_hours: ['Time needed', 'h'],
 };
+const WHOLE_TRIP_KEYS = new Set(['window_hours', 'depth_need_vs_have_ft']);
 
 function renderMeasured(r) {
   const summary = r.conditions_summary || {};
@@ -384,9 +386,9 @@ function renderMeasured(r) {
   };
   const rows = Object.entries(summary).map(([key, m]) => {
     const [label, unit] = MEASURE_LABELS[key] || [key, ''];
-    const wholeTrip = key === 'window_hours';
+    const wholeTrip = WHOLE_TRIP_KEYS.has(key);
     const value = wholeTrip ? m.value : scoped[key];
-    if (value == null) return `<div class="measure"><span>${label}</span><span class="hint">no data</span></div>`;
+    if (value == null || m.limit == null) return `<div class="measure"><span>${label}</span><span class="hint">no data</span></div>`;
     const ratio = m.limit ? value / m.limit : 0;
     const cls = ratio > 1 ? 'r' : ratio >= 0.85 ? 'y' : 'g';
     const icon = ratio > 1 ? '⛔' : ratio >= 0.85 ? '⚠️' : '✓';

@@ -30,10 +30,16 @@ MIN_SOG_KTS = 0.3  # floor so simulation can't divide by ~zero
 # the sustained-wind comfort limit are seamanship, not a no-go
 GUST_TOLERANCE = 1.2
 
+# Grounding: required water = draft + margin; available = charted depth (MLLW)
+# + predicted tide at the time you'll be there
+GROUNDING_MARGIN_FT = 1.0
+M_TO_FT = 3.28084
+
 
 @dataclass
 class BoatProfile:
     hull_speed_kts: float
+    draft_ft: float | None = None  # grounding check skipped if unknown
     motor_speed_kts: float | None = None
     sail_speed_upwind_kts: float | None = None
     sail_speed_reach_kts: float | None = None
@@ -54,6 +60,12 @@ class Waypoint:
     # (applies in both directions — stored on the lower-numbered end):
     # auto | motor (marina channels, tight water) | sail
     leg_mode: str = "auto"
+    # static chart facts (from ENC ingestion) — tide is time-varying and
+    # arrives via the conditions lookup instead
+    charted_min_depth_m: float | None = None  # conservative DRVAL1, meters below MLLW
+    on_land: bool = False
+    unsurveyed: bool = False
+    hazard_unknown_depth_nearby: bool = False  # wreck/obstruction with no sounding <200m
 
 
 # (waypoint_index, time) -> conditions record or None
@@ -272,6 +284,8 @@ class _Simulation:
         self.constraint_scores: list[int] = [100]
         self._wave_gap_noted = False
         self._weather_reported: set[tuple[str, str]] = set()  # (leg, kind) dedupe
+        self._depth_reported: set[tuple[int, str]] = set()  # (wp_order, kind) dedupe
+        self._depth_worst_available_ft: float | None = None
 
     def _check(
         self,
@@ -357,9 +371,94 @@ class _Simulation:
                 )
             )
 
+    def _depth_driver(self, kind: str, wp_order: int, severity: str, score: int, desc: str, leg: str) -> None:
+        if (wp_order, kind) in self._depth_reported:
+            return
+        self._depth_reported.add((wp_order, kind))
+        self.constraint_scores.append(score)
+        self.drivers.append(
+            Driver(
+                constraint_type="depth",
+                severity=severity,
+                leg=leg,
+                waypoint_order=wp_order,
+                description=desc,
+            )
+        )
+
+    def _check_depth(self, wp_order: int, rec: dict, leg: str, when: datetime) -> None:
+        """Grounding check: charted depth + tide at arrival time vs draft + margin."""
+        b = self.boat
+        if b.draft_ft is None:
+            return
+        wp = self.wps[wp_order]
+        label = f"waypoint {wp_order}" + (f" ({wp.name})" if wp.name else "")
+
+        if wp.on_land:
+            self._depth_driver(
+                "land", wp_order, "violation", 5, f"{label} is on charted LAND", leg
+            )
+            return
+        if wp.unsurveyed:
+            self._depth_driver(
+                "unsurveyed", wp_order, "warning", 55,
+                f"{label} is in unsurveyed water — depth unknown", leg,
+            )
+        if wp.hazard_unknown_depth_nearby:
+            self._depth_driver(
+                "hazard", wp_order, "warning", 70,
+                f"charted hazard with unknown depth within 200m of {label}", leg,
+            )
+        if wp.charted_min_depth_m is None:
+            self._depth_driver(
+                "nodata", wp_order, "ok", 100,
+                f"no charted depth data at {label} — grounding not checked", leg,
+            )
+            return
+
+        # Depth checks happen per VISIT (tide differs outbound vs return) —
+        # only the dedupe of land/unsurveyed/nodata is per-waypoint.
+        tide_ft = rec.get("tide_height_ft") or 0.0
+        available = wp.charted_min_depth_m * M_TO_FT + tide_ft
+        required = b.draft_ft + GROUNDING_MARGIN_FT
+        if self._depth_worst_available_ft is None or available < self._depth_worst_available_ft:
+            self._depth_worst_available_ft = available
+
+        local = when.astimezone(when.tzinfo or timezone.utc)
+        detail = (
+            f"need {required:.1f}ft (draft {b.draft_ft:.1f} + {GROUNDING_MARGIN_FT:.0f}ft margin), "
+            f"have {available:.1f}ft (charted {wp.charted_min_depth_m * M_TO_FT:.1f} + "
+            f"tide {tide_ft:.1f}) at {label}, {local:%a %H:%M %Z}"
+        )
+        tide_interp = bool(rec.get("tide_is_interpolated"))
+        if available <= 0:
+            self.constraint_scores.append(5)
+            self.drivers.append(
+                Driver(
+                    constraint_type="depth", severity="violation", leg=leg,
+                    waypoint_order=wp_order, actual_value=round(required, 1),
+                    threshold_value=round(available, 1), is_interpolated=tide_interp,
+                    description=f"GROUNDING: dries at this tide — {detail}",
+                )
+            )
+            return
+        ratio = required / available
+        sev = _severity(ratio)
+        self.constraint_scores.append(_constraint_score(ratio))
+        if sev != "ok":
+            self.drivers.append(
+                Driver(
+                    constraint_type="depth", severity=sev, leg=leg,
+                    waypoint_order=wp_order, actual_value=round(required, 1),
+                    threshold_value=round(available, 1), is_interpolated=tide_interp,
+                    description=f"grounding risk: {detail}",
+                )
+            )
+
     def _check_waypoint(self, wp_order: int, rec: dict, leg: str, when: datetime) -> None:
         b = self.boat
         self._check_weather(wp_order, rec, leg, when)
+        self._check_depth(wp_order, rec, leg, when)
         self._check("wind", rec.get("wind_speed_kts"), b.max_wind_kts, leg, wp_order, when, "wind kt")
         self._check(
             "wind",
@@ -569,6 +668,19 @@ def score_trip(
         "max_adverse_current_kts": {
             "value": _max_of(foul) or 0.0,
             "limit": boat.max_adverse_current_kts,
+        },
+        # need/have so ratio>1 = trouble, matching every other row's coloring
+        "depth_need_vs_have_ft": {
+            "value": (
+                round(boat.draft_ft + GROUNDING_MARGIN_FT, 1)
+                if boat.draft_ft is not None and sim._depth_worst_available_ft is not None
+                else None
+            ),
+            "limit": (
+                round(sim._depth_worst_available_ft, 1)
+                if sim._depth_worst_available_ft is not None
+                else None
+            ),
         },
         "window_hours": {"value": round(used_hrs, 1), "limit": round(window_hrs, 1)},
     }

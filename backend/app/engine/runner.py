@@ -10,6 +10,7 @@ from geoalchemy2.shape import to_shape
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.charts.depth import charted_depth_at
 from app.conditions.service import get_hourly_conditions
 from app.config import settings
 from app.engine.scoring import BoatProfile, ScoreResult, Waypoint, score_trip
@@ -25,6 +26,7 @@ def _f(value) -> float | None:
 
 def boat_profile(boat: Boat) -> BoatProfile:
     profile = BoatProfile(hull_speed_kts=float(boat.hull_speed_kts))
+    profile.draft_ft = _f(boat.draft_ft)
     profile.motor_speed_kts = _f(boat.motor_speed_kts)
     profile.sail_speed_upwind_kts = _f(boat.sail_speed_upwind_kts)
     profile.sail_speed_reach_kts = _f(boat.sail_speed_reach_kts)
@@ -66,7 +68,23 @@ async def rescore_trip(db: AsyncSession, trip: Trip) -> ScoreResult:
     waypoints = []
     for wp in trip.waypoints:
         pt = to_shape(wp.location)
-        waypoints.append(Waypoint(lat=pt.y, lon=pt.x, name=wp.name, leg_mode=wp.leg_mode))
+        # static chart facts per waypoint — the engine combines charted depth
+        # with tide at the simulated arrival time
+        chart = await charted_depth_at(db, pt.y, pt.x)
+        waypoints.append(
+            Waypoint(
+                lat=pt.y,
+                lon=pt.x,
+                name=wp.name,
+                leg_mode=wp.leg_mode,
+                charted_min_depth_m=chart["charted_min_depth_m"],
+                on_land=chart["on_land"],
+                unsurveyed=chart["unsurveyed"],
+                hazard_unknown_depth_nearby=any(
+                    h["depth_unknown"] for h in chart["hazards_within_200m"]
+                ),
+            )
+        )
 
     t_from = trip.departure_time - CONDITIONS_PAD_BEFORE
     t_to = trip.return_by_time + CONDITIONS_PAD_AFTER

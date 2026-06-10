@@ -5,6 +5,7 @@ from app.engine.scoring import BoatProfile, Waypoint, score_trip
 
 BOAT = BoatProfile(
     hull_speed_kts=6.4,
+    draft_ft=3.5,
     motor_speed_kts=4.5,
     sail_speed_upwind_kts=3.5,
     sail_speed_reach_kts=5.5,
@@ -243,6 +244,70 @@ def test_moderate_gusts_within_tolerance_ok():
 
     result = score_trip(BOAT, WPS, DEP, DEP + timedelta(hours=12), 1.0, breezy)
     assert not any("gusts" in d.description for d in result.drivers)
+
+
+# --- grounding checks ----------------------------------------------------------
+
+
+def test_waypoint_on_charted_land_is_violation():
+    wps = [
+        Waypoint(27.72, -82.40, "marina"),
+        Waypoint(27.66, -82.55, "oops", on_land=True),
+        Waypoint(27.60, -82.70, "destination"),
+    ]
+    result = score_trip(BOAT, wps, DEP, DEP + timedelta(hours=12), 1.0, benign)
+    assert not result.feasible
+    assert result.score <= 15
+    land = [d for d in result.drivers if "charted LAND" in d.description]
+    assert len(land) == 1  # deduped across outbound + return visits
+    assert land[0].constraint_type == "depth"
+
+
+def test_grounding_depends_on_tide_at_arrival_time():
+    """Thin water passable at high tide, grounding at low — the time-shifted
+    core insight applied to depth: outbound clears, return doesn't."""
+    wps = [
+        Waypoint(27.72, -82.40, "start", charted_min_depth_m=3.0),
+        Waypoint(27.66, -82.55, "thin spot", charted_min_depth_m=1.2),  # 3.9ft charted
+        Waypoint(27.60, -82.70, "destination", charted_min_depth_m=3.0),
+    ]
+
+    def falling_tide(i, t):
+        rec = dict(benign(i, t))
+        # high tide early (outbound), dead low for the return
+        rec["tide_height_ft"] = 2.0 if t < DEP + timedelta(hours=3) else 0.0
+        return rec
+
+    result = score_trip(BOAT, wps, DEP, DEP + timedelta(hours=12), 1.0, falling_tide)
+    # need 4.5ft; outbound has 3.9+2.0=5.9 (ok), return has 3.9+0.0=3.9 (violation)
+    depth = [d for d in result.drivers if d.constraint_type == "depth"]
+    assert all(d.leg == "return" for d in depth)
+    assert any(d.severity == "violation" for d in depth)
+    assert not result.feasible
+    assert result.conditions_summary["depth_need_vs_have_ft"]["value"] == 4.5
+    assert result.conditions_summary["depth_need_vs_have_ft"]["limit"] == 3.9
+
+
+def test_unsurveyed_water_warns_not_blocks():
+    wps = [
+        Waypoint(27.72, -82.40, "start", charted_min_depth_m=3.0),
+        Waypoint(27.66, -82.55, "gray area", unsurveyed=True, charted_min_depth_m=3.0),
+        Waypoint(27.60, -82.70, "destination", charted_min_depth_m=3.0),
+    ]
+    result = score_trip(BOAT, wps, DEP, DEP + timedelta(hours=12), 1.0, benign)
+    assert result.feasible  # warning, not violation
+    assert any(
+        d.constraint_type == "depth" and "unsurveyed" in d.description for d in result.drivers
+    )
+
+
+def test_no_draft_skips_grounding():
+    from dataclasses import replace
+
+    no_draft = replace(BOAT, draft_ft=None)
+    wps = [Waypoint(27.72, -82.40, on_land=True), Waypoint(27.60, -82.70)]
+    result = score_trip(no_draft, wps, DEP, DEP + timedelta(hours=12), 1.0, benign)
+    assert not any(d.constraint_type == "depth" for d in result.drivers)
 
 
 def test_missing_wave_data_noted_not_scored():

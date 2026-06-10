@@ -76,19 +76,68 @@ def _parse_time(t: str) -> datetime:
     return datetime.strptime(t, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
 
 
+def _cosine_interp_hourly(
+    events: list[tuple[datetime, float]], start: datetime, end: datetime
+) -> dict[datetime, float]:
+    """Hourly values between bracketing events via half-cosine easing — the
+    standard approximation for tidal curves between highs and lows."""
+    out: dict[datetime, float] = {}
+    t = start.replace(minute=0, second=0, microsecond=0)
+    while t <= end:
+        for (t1, v1), (t2, v2) in zip(events, events[1:]):
+            if t1 <= t <= t2:
+                frac = (t - t1).total_seconds() / (t2 - t1).total_seconds()
+                out[t] = v1 + (v2 - v1) * (1 - math.cos(math.pi * frac)) / 2
+                break
+        t += timedelta(hours=1)
+    return out
+
+
 async def fetch_tides(
     station: dict, start: datetime, end: datetime
 ) -> dict[datetime, dict]:
+    """Hourly tide predictions.
+
+    Harmonic stations support interval=h directly. Subordinate stations (e.g.
+    Shell Point 8726468) return an error for hourly — CO-OPS answers HTTP 200
+    with an error JSON — so we fall back to high/low events (interval=hilo,
+    padded ±1 day for bracketing) and cosine-interpolate, flagged
+    tide_is_interpolated.
+    """
     params = _coops_params("predictions", station["id"], start, end)
     params["datum"] = "MLLW"
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(DATA_URL, params=params)
         resp.raise_for_status()
-    payload = resp.json()
-    out: dict[datetime, dict] = {}
-    for p in payload.get("predictions", []):
-        out[_parse_time(p["t"])] = {"tide_height_ft": float(p["v"])}
-    return out
+        payload = resp.json()
+
+        predictions = payload.get("predictions") or []
+        if predictions:
+            return {
+                _parse_time(p["t"]): {"tide_height_ft": float(p["v"]), "tide_is_interpolated": False}
+                for p in predictions
+            }
+
+        # subordinate station: hilo events + interpolation
+        params = _coops_params(
+            "predictions", station["id"], start - timedelta(days=1), end + timedelta(days=1)
+        )
+        params["datum"] = "MLLW"
+        params["interval"] = "hilo"
+        resp = await client.get(DATA_URL, params=params)
+        resp.raise_for_status()
+        payload = resp.json()
+
+    events = sorted(
+        (_parse_time(p["t"]), float(p["v"])) for p in payload.get("predictions") or []
+    )
+    if len(events) < 2:
+        return {}
+    hourly = _cosine_interp_hourly(events, start, end)
+    return {
+        t: {"tide_height_ft": round(v, 2), "tide_is_interpolated": True}
+        for t, v in hourly.items()
+    }
 
 
 async def fetch_currents(
