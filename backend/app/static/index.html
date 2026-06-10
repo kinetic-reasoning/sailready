@@ -324,15 +324,37 @@ function drawScoreOverlay(r) {
   document.querySelectorAll('.viewbtn').forEach(x => x.classList.toggle('active', x.dataset.view===legView));
   if (!selectedTrip || !selectedTrip.waypoints.length) return;
   const wp = o => selectedTrip.waypoints.find(w=>w.sequence_order===o);
+  // worst driver severity touching either end of a leg, same direction
+  const legRisk = l => {
+    let worst = null;
+    for (const d of r.drivers) {
+      if (!d.leg || d.waypoint_order == null || d.leg !== l.leg) continue;
+      if (d.waypoint_order !== l.from_order && d.waypoint_order !== l.to_order) continue;
+      if (d.severity === 'violation') worst = 'violation';
+      else if (d.severity === 'warning' && worst !== 'violation') worst = 'warning';
+    }
+    return worst;
+  };
   const visible = r.legs.filter(l => legView==='both' || l.leg===legView);
   visible.forEach(l => {
     const a = wp(l.from_order), b = wp(l.to_order);
     if (!a || !b) return;
     const windFrom = l.wind_dir_deg!=null ? ` · wind from ${Math.round(l.wind_dir_deg)}°` : '';
+    const risk = legRisk(l);
+    if (risk) {
+      // red/orange casing under the mode-colored line
+      L.polyline([[a.lat,a.lon],[b.lat,b.lon]], {
+        color: risk==='violation' ? '#ff2d2d' : '#ff9442',
+        weight: (l.leg==='outbound'?5:3) + 6,
+        opacity: risk==='violation' ? .8 : .5,
+        interactive: false,
+      }).addTo(scoreLayer);
+    }
+    const riskTxt = risk ? ` · ${risk==='violation'?'⛔ flagged':'⚠️ caution'}` : '';
     L.polyline([[a.lat,a.lon],[b.lat,b.lon]], {
       color: MODE_COLOR[l.mode]||'#4cc9f0', weight: l.leg==='outbound'?5:3,
       dashArray: l.leg==='return'?'8 8':null, opacity:.9,
-    }).bindTooltip(`${l.leg} ${l.from_order}→${l.to_order}: ${l.mode}${l.point_of_sail?' · '+l.point_of_sail:''} · ${l.sog_kts}kt SOG${windFrom}`).addTo(scoreLayer);
+    }).bindTooltip(`${l.leg} ${l.from_order}→${l.to_order}: ${l.mode}${l.point_of_sail?' · '+l.point_of_sail:''} · ${l.sog_kts}kt SOG${windFrom}${riskTxt}`).addTo(scoreLayer);
     // wind arrows: drawn for the visible direction; in Both view, outbound only
     if ((legView==='both' ? l.leg==='outbound' : true) && l.wind_dir_deg!=null) {
       const mid = [(a.lat+b.lat)/2, (a.lon+b.lon)/2];
@@ -354,8 +376,10 @@ legendCtl.onAdd = () => {
     '<b>Legend</b><br>'+
     '➤ wind direction (blowing toward) · speed G gust<br>'+
     '<span style="color:#52d273">━</span> sail &nbsp;'+
-    '<span style="color:#ffd166">━</span> beating &nbsp;'+
+    '<span style="color:#ffd166">━</span> beating (tacking upwind) &nbsp;'+
     '<span style="color:#9aa5b1">━</span> motor<br>'+
+    '<span style="color:#ff2d2d">▬</span> red glow = leg flagged by a violation · '+
+    '<span style="color:#ff9442">▬</span> orange = warning<br>'+
     'solid = outbound · dashed = return<br>'+
     'planning trips: drag pins to adjust · click pin for motor/sail';
   return div;
