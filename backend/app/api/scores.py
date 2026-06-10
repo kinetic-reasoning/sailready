@@ -44,6 +44,7 @@ class LegOut(BaseModel):
     boat_speed_kts: float = 0.0
     current_along_kts: float = 0.0
     wind_speed_kts: float | None = None
+    wind_gust_kts: float | None = None
     wind_dir_deg: float | None = None
     wave_height_ft: float | None = None
     rain_prob_pct: float | None = None

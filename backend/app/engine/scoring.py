@@ -26,6 +26,9 @@ DEFAULT_MAX_ADVERSE_CURRENT_KTS = 1.5
 
 MOTOR_WIND_THRESHOLD_KTS = 6.0  # below this, assume motoring
 MIN_SOG_KTS = 0.3  # floor so simulation can't divide by ~zero
+# Gusts are checked against max_wind * tolerance: brief gusts moderately above
+# the sustained-wind comfort limit are seamanship, not a no-go
+GUST_TOLERANCE = 1.2
 
 
 @dataclass
@@ -89,6 +92,7 @@ class LegResult:
     point_of_sail: str | None = None  # no-go | close-hauled | beam reach | broad reach | run
     leg_mode: str = "auto"  # the constraint that was applied (auto/motor/sail)
     wind_speed_kts: float | None = None
+    wind_gust_kts: float | None = None
     wind_dir_deg: float | None = None
     wave_height_ft: float | None = None
     rain_prob_pct: float | None = None
@@ -357,6 +361,15 @@ class _Simulation:
         b = self.boat
         self._check_weather(wp_order, rec, leg, when)
         self._check("wind", rec.get("wind_speed_kts"), b.max_wind_kts, leg, wp_order, when, "wind kt")
+        self._check(
+            "wind",
+            rec.get("wind_gust_kts"),
+            b.max_wind_kts * GUST_TOLERANCE,
+            leg,
+            wp_order,
+            when,
+            "gusts kt",
+        )
         wave = rec.get("wave_height_ft")
         if wave is not None:
             self._check("wave", wave, b.max_wave_ft, leg, wp_order, when, "waves ft")
@@ -436,6 +449,7 @@ class _Simulation:
                         boat_speed_kts=round(speed, 2),
                         current_along_kts=round(along, 2),
                         wind_speed_kts=rec.get("wind_speed_kts"),
+                        wind_gust_kts=rec.get("wind_gust_kts"),
                         wind_dir_deg=rec.get("wind_dir_deg"),
                         wave_height_ft=rec.get("wave_height_ft"),
                         rain_prob_pct=rec.get("rain_prob_pct"),
@@ -539,6 +553,10 @@ def score_trip(
         "max_wind_kts": {
             "value": _max_of([leg.wind_speed_kts for leg in sim.legs]),
             "limit": boat.max_wind_kts,
+        },
+        "max_gust_kts": {
+            "value": _max_of([leg.wind_gust_kts for leg in sim.legs]),
+            "limit": round(boat.max_wind_kts * GUST_TOLERANCE, 1),
         },
         "max_wave_ft": {
             "value": _max_of([leg.wave_height_ft for leg in sim.legs]),

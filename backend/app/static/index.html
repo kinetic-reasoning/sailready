@@ -219,9 +219,10 @@ function drawScoreOverlay(r) {
     if (l.leg==='outbound' && l.wind_dir_deg!=null) {
       const mid = [(a.lat+b.lat)/2, (a.lon+b.lon)/2];
       const rot = (l.wind_dir_deg+180-90); // CSS rotate: glyph ➤ points right (090°)
+      const gustTxt = l.wind_gust_kts!=null && l.wind_gust_kts > (l.wind_speed_kts||0)+1 ? ` G${Math.round(l.wind_gust_kts)}` : '';
       L.marker(mid, {icon: L.divIcon({className:'', iconSize:[40,20], html:
         `<div style="transform:rotate(${rot}deg);font-size:18px;color:#4cc9f0;text-shadow:0 0 3px #000">➤</div>`+
-        `<div style="font-size:10px;color:#fff;text-shadow:0 0 3px #000;white-space:nowrap">${Math.round(l.wind_speed_kts||0)}kt</div>`
+        `<div style="font-size:10px;color:#fff;text-shadow:0 0 3px #000;white-space:nowrap">${Math.round(l.wind_speed_kts||0)}kt${gustTxt}</div>`
       }), interactive:false}).addTo(scoreLayer);
     }
   });
@@ -323,6 +324,7 @@ function renderScoreSummary() {
 
 const MEASURE_LABELS = {
   max_wind_kts: ['Max wind', 'kt'],
+  max_gust_kts: ['Max gusts', 'kt'],
   max_wave_ft: ['Max waves', 'ft'],
   max_rain_prob_pct: ['Max rain chance', '%'],
   max_adverse_current_kts: ['Max adverse current', 'kt'],
@@ -363,7 +365,8 @@ function renderScore(r) {
   $('legs').innerHTML = '<h2>Legs — everything sampled</h2><table>'+
     '<tr><th>Leg</th><th>Dep</th><th>Crs</th><th>Steer</th><th>nm</th><th>Wind</th><th>∠</th><th>Wave</th><th>Rain</th><th>Cur±</th><th>Boat</th><th>SOG</th><th>Mode</th></tr>'+
     r.legs.map(l=>{
-      const wind = l.wind_speed_kts!=null ? `${Math.round(l.wind_speed_kts)}kt@${deg(l.wind_dir_deg)}` : '–';
+      const gust = l.wind_gust_kts!=null && l.wind_gust_kts > (l.wind_speed_kts||0)+1 ? `<small class="o"> G${Math.round(l.wind_gust_kts)}</small>` : '';
+      const wind = l.wind_speed_kts!=null ? `${Math.round(l.wind_speed_kts)}kt@${deg(l.wind_dir_deg)}${gust}` : '–';
       const angle = l.wind_angle_deg!=null ? `${Math.abs(l.wind_angle_deg)}°${l.wind_angle_deg>=0?'S':'P'}` : '–';
       const pos = l.point_of_sail ? `<br><small class="hint">${l.point_of_sail}</small>` : '';
       const cur = l.current_along_kts ? `${l.current_along_kts>0?'+':''}${l.current_along_kts}${l.current_is_interpolated?'*':''}` : '0';
@@ -389,7 +392,8 @@ $('scoreBtn').onclick = async () => {
 
 // --- new trip flow ---
 $('newTripBtn').onclick = async () => {
-  newTripMode = true; newTripPins = []; routeLayer.clearLayers();
+  newTripMode = true; newTripPins = []; redrawMode = false;
+  routeLayer.clearLayers(); scoreLayer.clearLayers(); // blank canvas — no leftover trip
   selectedTrip = null; $('scorePanel').style.display='none';
   $('newTripForm').style.display='flex'; $('wpCount').textContent='0';
   const now = new Date(); now.setDate(now.getDate()+1); now.setHours(9,0,0,0);
@@ -397,7 +401,7 @@ $('newTripBtn').onclick = async () => {
   now.setHours(17); $('tRet').value = now.toISOString().slice(0,16);
   await loadBoats();
 };
-$('tCancel').onclick = () => { newTripMode=false; newTripPins=[]; routeLayer.clearLayers(); $('newTripForm').style.display='none'; };
+$('tCancel').onclick = () => { newTripMode=false; newTripPins=[]; routeLayer.clearLayers(); scoreLayer.clearLayers(); $('newTripForm').style.display='none'; };
 $('tUndo').onclick = () => { newTripPins.pop(); redrawPins(); };
 
 function redrawPins() {

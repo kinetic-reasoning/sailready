@@ -216,6 +216,35 @@ def test_crab_corrected_course_to_steer():
     assert 75 <= outbound.cts_deg < 90
 
 
+def test_gusts_scored_with_tolerance():
+    """Sustained 15kt is fine for a 20kt limit, but 30kt gusts blow through
+    the 24kt gust tolerance (20 * 1.2) -> violation."""
+
+    def gusty(i, t):
+        rec = dict(benign(i, t))
+        rec["wind_speed_kts"] = 15.0
+        rec["wind_gust_kts"] = 30.0
+        return rec
+
+    result = score_trip(BOAT, WPS, DEP, DEP + timedelta(hours=12), 1.0, gusty)
+    assert not result.feasible
+    gust_drivers = [d for d in result.drivers if "gusts" in d.description]
+    assert any(d.severity == "violation" for d in gust_drivers)
+    assert result.conditions_summary["max_gust_kts"]["value"] == 30.0
+    assert result.conditions_summary["max_gust_kts"]["limit"] == 24.0
+
+
+def test_moderate_gusts_within_tolerance_ok():
+    def breezy(i, t):
+        rec = dict(benign(i, t))
+        rec["wind_speed_kts"] = 14.0
+        rec["wind_gust_kts"] = 19.0  # under 24kt tolerance and under 0.85 warning band
+        return rec
+
+    result = score_trip(BOAT, WPS, DEP, DEP + timedelta(hours=12), 1.0, breezy)
+    assert not any("gusts" in d.description for d in result.drivers)
+
+
 def test_missing_wave_data_noted_not_scored():
     def no_waves(i, t):
         rec = dict(benign(i, t))
