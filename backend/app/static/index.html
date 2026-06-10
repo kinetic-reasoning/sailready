@@ -301,15 +301,17 @@ function renderScore(r) {
     `<div class="driver ${d.severity}">${d.severity==='violation'?'⛔':d.severity==='warning'?'⚠️':'ℹ️'} ${d.description}${d.is_interpolated?' <i>(interpolated)</i>':''}</div>`
   ).join('') || '<div class="driver ok">All checks within limits.</div>');
   $('legs').innerHTML = '<h2>Legs — everything sampled</h2><table>'+
-    '<tr><th>Leg</th><th>Dep</th><th>Crs</th><th>nm</th><th>Wind</th><th>Wave</th><th>Rain</th><th>Cur±</th><th>Boat</th><th>SOG</th><th>Mode</th></tr>'+
+    '<tr><th>Leg</th><th>Dep</th><th>Crs</th><th>Steer</th><th>nm</th><th>Wind</th><th>Wave</th><th>Rain</th><th>Cur±</th><th>Boat</th><th>SOG</th><th>Mode</th></tr>'+
     r.legs.map(l=>{
       const wind = l.wind_speed_kts!=null ? `${Math.round(l.wind_speed_kts)}kt@${deg(l.wind_dir_deg)}` : '–';
       const cur = l.current_along_kts ? `${l.current_along_kts>0?'+':''}${l.current_along_kts}${l.current_is_interpolated?'*':''}` : '0';
+      const steer = l.mode==='sail-tack' ? `<b>tack ${l.tack_headings}</b>` : (l.cts_deg!=null ? deg(l.cts_deg) : '–');
+      const modeIcon = l.mode==='sail'?'⛵':l.mode==='sail-tack'?'⛵⇄':'⚙️';
       return `<tr><td>${l.leg==='outbound'?'▸':'◂'} ${l.from_order}→${l.to_order}</td><td>${new Date(l.start).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</td>`+
-        `<td>${deg(l.course_deg)}</td><td>${l.distance_nm}</td><td>${wind}</td><td>${num(l.wave_height_ft,"'")}</td>`+
-        `<td>${num(l.rain_prob_pct,'%')}</td><td>${cur}</td><td>${l.boat_speed_kts}</td><td><b>${l.sog_kts}</b></td><td>${l.mode==='sail'?'⛵':'⚙️'}</td></tr>`;
+        `<td>${deg(l.course_deg)}</td><td>${steer}</td><td>${l.distance_nm}</td><td>${wind}</td><td>${num(l.wave_height_ft,"'")}</td>`+
+        `<td>${num(l.rain_prob_pct,'%')}</td><td>${cur}</td><td>${l.boat_speed_kts}</td><td><b>${l.sog_kts}</b></td><td>${modeIcon}</td></tr>`;
     }).join('')+'</table>'+
-    '<span class="hint">Crs = course to steer (true). Cur± = current along course, + fair / − foul, * = interpolated between station predictions. SOG = boat speed ± current.</span>';
+    '<span class="hint">Crs = rhumb-line course (true). Steer = crab-corrected course to steer; when beating (⛵⇄) the two tack headings are shown and Boat = VMG along the rhumb. Cur± = current along course, + fair / − foul, * = interpolated. SOG = effective speed ± current.</span>';
 }
 
 $('scoreBtn').onclick = async () => {

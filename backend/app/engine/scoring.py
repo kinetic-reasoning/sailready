@@ -38,6 +38,8 @@ class BoatProfile:
     max_wind_kts: float = DEFAULT_MAX_WIND_KTS
     max_wave_ft: float = DEFAULT_MAX_WAVE_FT
     max_adverse_current_kts: float = DEFAULT_MAX_ADVERSE_CURRENT_KTS
+    sailing_preference: str = "sail"  # sail | fastest | motor
+    min_upwind_angle_deg: float = 45.0  # closest the boat can point to true wind
 
 
 @dataclass
@@ -75,7 +77,9 @@ class LegResult:
     mode: str  # sail | motor
     # everything the engine sampled to produce this leg — full transparency
     course_deg: float = 0.0
-    boat_speed_kts: float = 0.0
+    cts_deg: float | None = None  # crab-corrected course to steer
+    tack_headings: str | None = None  # when beating: the two close-hauled headings
+    boat_speed_kts: float = 0.0  # through water (VMG along course when tacking)
     current_along_kts: float = 0.0  # signed: + fair, - foul
     wind_speed_kts: float | None = None
     wind_dir_deg: float | None = None
@@ -113,8 +117,30 @@ def _wind_angle_off_bow(wind_from_deg: float, course_deg: float) -> float:
     return abs((wind_from_deg - course_deg + 180) % 360 - 180)
 
 
-def _boat_speed(boat: BoatProfile, rec: dict, course: float) -> tuple[float, str]:
-    motor = boat.motor_speed_kts or boat.hull_speed_kts * 0.7
+MIN_PRACTICAL_SAIL_KTS = 2.0  # below this VMG, drop the rags and motor
+
+
+def _sail_speed_for_angle(boat: BoatProfile, angle: float) -> float | None:
+    """Boat speed through water for a sailable wind angle (outside the no-go zone)."""
+    if angle < 60:
+        return boat.sail_speed_upwind_kts
+    if angle <= 120:
+        return boat.sail_speed_reach_kts
+    return boat.sail_speed_downwind_kts
+
+
+def _leg_performance(
+    boat: BoatProfile, rec: dict, course: float
+) -> tuple[float, str, str | None]:
+    """Effective speed ALONG THE COURSE, mode, and tack headings if beating.
+
+    If the course lies inside the no-go zone (wind angle < min_upwind_angle),
+    the boat must tack: it sails close-hauled on alternating headings and its
+    effective progress is the VMG component along the rhumb line —
+    upwind_speed * cos(beta - theta). Dead upwind with a 45° boat that's
+    ~0.71x: the geometry every sailor knows as "beating takes half again as long."
+    """
+    motor = min(boat.motor_speed_kts or boat.hull_speed_kts * 0.7, boat.hull_speed_kts)
     wind = rec.get("wind_speed_kts")
     wind_from = rec.get("wind_dir_deg")
     has_polars = any(
@@ -125,19 +151,53 @@ def _boat_speed(boat: BoatProfile, rec: dict, course: float) -> tuple[float, str
             boat.sail_speed_downwind_kts,
         )
     )
-    if wind is None or wind_from is None or wind < MOTOR_WIND_THRESHOLD_KTS or not has_polars:
-        return min(motor, boat.hull_speed_kts), "motor"
+    if (
+        boat.sailing_preference == "motor"
+        or wind is None
+        or wind_from is None
+        or wind < MOTOR_WIND_THRESHOLD_KTS
+        or not has_polars
+    ):
+        return motor, "motor", None
 
-    angle = _wind_angle_off_bow(wind_from, course)
-    if angle < 50:
-        speed = boat.sail_speed_upwind_kts
-    elif angle <= 120:
-        speed = boat.sail_speed_reach_kts
+    theta = _wind_angle_off_bow(wind_from, course)
+    beta = boat.min_upwind_angle_deg
+    tack_headings: str | None = None
+
+    if theta < beta:
+        # In the no-go zone: beat to windward at beta, VMG along the course
+        base = boat.sail_speed_upwind_kts
+        if base is None:
+            return motor, "motor", None
+        sail_speed = min(base, boat.hull_speed_kts) * math.cos(math.radians(beta - theta))
+        mode = "sail-tack"
+        tack_headings = f"{(wind_from + beta) % 360:03.0f}°/{(wind_from - beta) % 360:03.0f}°"
     else:
-        speed = boat.sail_speed_downwind_kts
-    if speed is None:
-        return min(motor, boat.hull_speed_kts), "motor"
-    return min(speed, boat.hull_speed_kts), "sail"
+        base = _sail_speed_for_angle(boat, theta)
+        if base is None:
+            return motor, "motor", None
+        sail_speed = min(base, boat.hull_speed_kts)
+        mode = "sail"
+
+    if boat.sailing_preference == "fastest" and motor > sail_speed:
+        return motor, "motor", None
+    if sail_speed < MIN_PRACTICAL_SAIL_KTS and motor > sail_speed:
+        return motor, "motor", None
+    return sail_speed, mode, tack_headings
+
+
+def _course_to_steer(course: float, rec: dict, speed: float) -> float | None:
+    """Crab-corrected heading: aim upstream of the cross-current so the track
+    over ground follows the rhumb line."""
+    cur = rec.get("current_speed_kts")
+    cur_dir = rec.get("current_dir_deg")
+    if cur is None or cur_dir is None or speed <= 0:
+        return round(course)
+    cross = cur * math.sin(math.radians(cur_dir - course))  # + pushes to starboard
+    if abs(cross) >= speed:
+        return None  # current stronger than the boat — no heading holds the track
+    crab = math.degrees(math.asin(cross / speed))
+    return round((course - crab) % 360)
 
 
 def _current_along_course(rec: dict, course: float) -> float:
@@ -299,7 +359,7 @@ class _Simulation:
             distance = haversine_nm(a.lat, a.lon, b.lat, b.lon)
             rec = self.lookup(i, t) or {}
 
-            speed, mode = _boat_speed(self.boat, rec, course)
+            speed, mode, tack_headings = _leg_performance(self.boat, rec, course)
             along = _current_along_course(rec, course)
             sog = max(speed + along, MIN_SOG_KTS)
 
@@ -330,6 +390,10 @@ class _Simulation:
                         sog_kts=round(sog, 2),
                         mode=mode,
                         course_deg=round(course),
+                        cts_deg=(
+                            None if mode == "sail-tack" else _course_to_steer(course, rec, speed)
+                        ),
+                        tack_headings=tack_headings,
                         boat_speed_kts=round(speed, 2),
                         current_along_kts=round(along, 2),
                         wind_speed_kts=rec.get("wind_speed_kts"),

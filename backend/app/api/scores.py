@@ -39,6 +39,8 @@ class LegOut(BaseModel):
     sog_kts: float
     mode: str
     course_deg: float = 0.0
+    cts_deg: float | None = None
+    tack_headings: str | None = None
     boat_speed_kts: float = 0.0
     current_along_kts: float = 0.0
     wind_speed_kts: float | None = None

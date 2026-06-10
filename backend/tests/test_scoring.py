@@ -48,9 +48,9 @@ def test_benign_conditions_high_score():
 
 
 def test_tight_window_warns_and_suggests():
-    """10h window for the same trip: engine flags the squeeze and suggests
-    leaving earlier — the core product behavior."""
-    result = score_trip(BOAT, WPS, DEP, DEP + timedelta(hours=10), 1.0, benign)
+    """11h window vs ~10.2h needed (return is a beat — 25° off the wind is in
+    the no-go zone, so the engine uses tacking VMG): warning + suggestion."""
+    result = score_trip(BOAT, WPS, DEP, DEP + timedelta(hours=11), 1.0, benign)
     assert result.feasible  # warning, not violation
     assert 40 <= result.score < 85
     assert any(
@@ -144,6 +144,57 @@ def test_rain_warns_but_can_still_go():
     assert any(
         d.constraint_type == "weather" and d.severity == "warning" for d in result.drivers
     )
+
+
+EW_WPS = [Waypoint(27.60, -82.70, "west"), Waypoint(27.60, -82.50, "east")]  # due E-W
+
+
+def east_wind(i, t):
+    return {"wind_speed_kts": 12.0, "wind_dir_deg": 90.0, "wave_height_ft": 1.0}
+
+
+def test_beating_dead_upwind_uses_vmg():
+    """Outbound course 090 with wind FROM 090 = no-go zone -> tack at VMG."""
+    result = score_trip(BOAT, EW_WPS, DEP, DEP + timedelta(hours=14), 0.5, east_wind)
+    outbound = [l for l in result.legs if l.leg == "outbound"][0]
+    assert outbound.mode == "sail-tack"
+    assert outbound.tack_headings is not None
+    # VMG = 3.5 * cos(45°) ≈ 2.47 — beating is slow, that's the point
+    assert abs(outbound.boat_speed_kts - 3.5 * 0.7071) < 0.05
+    # return is dead downwind -> plain sail at downwind speed
+    ret = [l for l in result.legs if l.leg == "return"][0]
+    assert ret.mode == "sail"
+    assert ret.boat_speed_kts == BOAT.sail_speed_downwind_kts
+
+
+def test_fastest_preference_motors_when_beating_is_slower():
+    from dataclasses import replace
+
+    fastest = replace(BOAT, sailing_preference="fastest")
+    result = score_trip(fastest, EW_WPS, DEP, DEP + timedelta(hours=14), 0.5, east_wind)
+    outbound = [l for l in result.legs if l.leg == "outbound"][0]
+    # motor 4.5 beats VMG 2.47 -> motors upwind
+    assert outbound.mode == "motor"
+    assert outbound.boat_speed_kts == 4.5
+    # downwind sail (5.0) beats motor (4.5) -> sails home
+    ret = [l for l in result.legs if l.leg == "return"][0]
+    assert ret.mode == "sail"
+
+
+def test_crab_corrected_course_to_steer():
+    def cross_current(i, t):
+        # course 090, current flowing due south (180) at 1kt = pushing to starboard
+        return {
+            "wind_speed_kts": 12.0, "wind_dir_deg": 180.0,  # beam reach
+            "current_speed_kts": 1.0, "current_dir_deg": 180.0,
+        }
+
+    result = score_trip(BOAT, EW_WPS, DEP, DEP + timedelta(hours=14), 0.5, cross_current)
+    outbound = [l for l in result.legs if l.leg == "outbound"][0]
+    assert outbound.mode == "sail"
+    # crab into the current: CTS should be NORTH of the 090 course
+    assert outbound.cts_deg is not None
+    assert 75 <= outbound.cts_deg < 90
 
 
 def test_missing_wave_data_noted_not_scored():

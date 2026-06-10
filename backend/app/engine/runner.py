@@ -35,6 +35,8 @@ def boat_profile(boat: Boat) -> BoatProfile:
         profile.max_wave_ft = float(boat.max_wave_ft)
     if boat.max_adverse_current_kts is not None:
         profile.max_adverse_current_kts = float(boat.max_adverse_current_kts)
+    profile.sailing_preference = boat.sailing_preference
+    profile.min_upwind_angle_deg = float(boat.min_upwind_angle_deg)
     return profile
 
 
