@@ -112,6 +112,7 @@ class WaypointIn(BaseModel):
     lon: float = Field(ge=-180, le=180)
     name: str | None = None
     leg_mode: Literal["auto", "motor", "sail"] = "auto"
+    depth_acknowledged: bool = False
 
 
 class WaypointsReplaceIn(BaseModel):
@@ -126,6 +127,7 @@ class WaypointOut(BaseModel):
     waypoint_type: str
     is_auto_routed: bool
     leg_mode: str
+    depth_acknowledged: bool
 
 
 class TripOut(BaseModel):

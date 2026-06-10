@@ -180,11 +180,14 @@ const LEG_MODE_LABEL = {auto:'Auto (engine decides)', motor:'Motor only', sail:'
 
 function legModePopup(i, w, total) {
   const depthDiv = `<div id="wpdepth-${i}" style="font-size:11px;color:#555;margin-top:4px">loading chart data…</div>`;
-  if (i === total-1) return `<b>${w.name||'destination'}</b>${depthDiv}`;
+  const ackBtn = `<button onclick="setDepthAck(${i}, ${!w.depth_acknowledged})" style="margin-top:4px;padding:4px 8px;cursor:pointer;font-size:11px;${w.depth_acknowledged?'background:#d7f5dd;':''}">`
+    + (w.depth_acknowledged ? '✓ depth acknowledged — click to clear' : 'I know this water — acknowledge depth')
+    + '</button>';
+  if (i === total-1) return `<b>${w.name||'destination'}</b>${depthDiv}${ackBtn}`;
   const btns = ['auto','motor','sail'].map(m =>
     `<button onclick="setLegMode(${i},'${m}')" style="margin:2px;padding:4px 8px;cursor:pointer;${w.leg_mode===m?'font-weight:bold;outline:2px solid #4cc9f0;':''}">${m}</button>`
   ).join('');
-  return `<b>${w.name||'waypoint '+i}</b><br>Leg ${i}→${i+1}: <b>${LEG_MODE_LABEL[w.leg_mode||'auto']}</b><br>${btns}${depthDiv}`;
+  return `<b>${w.name||'waypoint '+i}</b><br>Leg ${i}→${i+1}: <b>${LEG_MODE_LABEL[w.leg_mode||'auto']}</b><br>${btns}${depthDiv}${ackBtn}`;
 }
 
 async function fillWaypointDepth(i, w) {
@@ -201,14 +204,31 @@ async function fillWaypointDepth(i, w) {
   } catch(e) { el.textContent = 'chart data unavailable'; }
 }
 
+const wpsPayload = () => selectedTrip.waypoints.map(w => ({
+  lat: w.lat, lon: w.lon, name: w.name,
+  leg_mode: w.leg_mode || 'auto',
+  depth_acknowledged: w.depth_acknowledged || false,
+}));
+
 window.setLegMode = async (i, mode) => {
   if (!selectedTrip || selectedTrip.status !== 'planning') { status('Leg modes editable on planning trips only'); return; }
-  const wps = selectedTrip.waypoints.map(w => ({lat:w.lat, lon:w.lon, name:w.name, leg_mode:w.leg_mode||'auto'}));
+  const wps = wpsPayload();
   wps[i].leg_mode = mode;
   try {
     await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints: wps})});
     await selectTrip(selectedTrip.id, false);
     status(`Leg ${i}→${i+1} set to ${mode} — re-score to update.`);
+  } catch(e) { status('Failed: '+e.message); }
+};
+
+window.setDepthAck = async (i, value) => {
+  if (!selectedTrip || selectedTrip.status !== 'planning') { status('Editable on planning trips only'); return; }
+  const wps = wpsPayload();
+  wps[i].depth_acknowledged = value;
+  try {
+    await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints: wps})});
+    await selectTrip(selectedTrip.id, false);
+    status(value ? `Waypoint ${i} depth acknowledged — re-score to update.` : `Waypoint ${i} acknowledgment cleared.`);
   } catch(e) { status('Failed: '+e.message); }
 };
 

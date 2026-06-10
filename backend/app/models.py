@@ -142,6 +142,7 @@ class RouteWaypoint(Base):
     )
     is_auto_routed: Mapped[bool] = mapped_column(server_default=text("false"))
     leg_mode: Mapped[str] = mapped_column(server_default=text("'auto'"))
+    depth_acknowledged: Mapped[bool] = mapped_column(server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

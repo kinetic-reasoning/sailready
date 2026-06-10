@@ -17,7 +17,7 @@
 | A6 | **Saved routes + feedback UI** | Both APIs exist; surface them (save current route, instantiate trip from template, post-trip thumbs + actuals form). | TODO |
 | A7 | **API integration tests** | httpx test client against the stack: auth context, RLS isolation, trip lifecycle, score persistence. Engine already covered (18 tests). | TODO |
 | A8 | **Long-leg conditions subdivision** | Conditions are sampled per waypoint at arrival time; a leg uses its START point's conditions. Fine at day-sail pin density, wrong for a 60nm leg (Tampa->Key West). Auto-subdivide legs every ~5-10nm for sampling without adding visible waypoints. | TODO |
-| A9 | **Local-knowledge waypoint override** | ENC DRVAL1 is the conservative minimum of a whole depth polygon — Shell Point creek charts 3.0ft while soundings beside the pins read 3.9-6.9ft. Let the skipper acknowledge a flagged waypoint ("I know this channel"), downgrading violation->warning with an audit note in drivers. Real fix for channel-grade depth is eHydro (C6). | TODO |
+| A9 | **Local-knowledge waypoint override** | Acknowledge a flagged waypoint via its popup -> depth violations become "acknowledged (local knowledge)" warnings with the chart math still shown; land never acknowledgeable. Beercan trip: 24 violations -> warnings, real drivers (thunderstorms, gusts) surfaced. | **DONE** 2026-06-10 |
 
 ## Milestone B — "Take it to sea" (the co-pilot)
 

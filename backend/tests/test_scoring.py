@@ -301,6 +301,39 @@ def test_unsurveyed_water_warns_not_blocks():
     )
 
 
+def test_acknowledged_depth_downgrades_violation_to_warning():
+    wps = [
+        Waypoint(27.72, -82.40, "start", charted_min_depth_m=3.0),
+        Waypoint(27.66, -82.55, "home creek", charted_min_depth_m=0.9, depth_acknowledged=True),
+        Waypoint(27.60, -82.70, "destination", charted_min_depth_m=3.0),
+    ]
+
+    def low_tide(i, t):
+        rec = dict(benign(i, t))
+        rec["tide_height_ft"] = 0.3  # 0.9m charted + 0.3 tide = 3.25ft < 4.5 needed
+        return rec
+
+    result = score_trip(BOAT, wps, DEP, DEP + timedelta(hours=12), 1.0, low_tide)
+    depth = [d for d in result.drivers if d.constraint_type == "depth"]
+    assert depth and all(d.severity == "warning" for d in depth)
+    assert all("acknowledged" in d.description for d in depth)
+    assert result.feasible  # downgraded — no violations remain
+    assert result.score >= 60
+
+
+def test_land_cannot_be_acknowledged():
+    wps = [
+        Waypoint(27.72, -82.40, "start", charted_min_depth_m=3.0),
+        Waypoint(27.66, -82.55, "nope", on_land=True, depth_acknowledged=True),
+        Waypoint(27.60, -82.70, "destination", charted_min_depth_m=3.0),
+    ]
+    result = score_trip(BOAT, wps, DEP, DEP + timedelta(hours=12), 1.0, benign)
+    assert not result.feasible  # land is land
+    assert any(
+        d.constraint_type == "depth" and d.severity == "violation" for d in result.drivers
+    )
+
+
 def test_no_draft_skips_grounding():
     from dataclasses import replace
 

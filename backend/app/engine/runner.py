@@ -77,6 +77,7 @@ async def rescore_trip(db: AsyncSession, trip: Trip) -> ScoreResult:
                 lon=pt.x,
                 name=wp.name,
                 leg_mode=wp.leg_mode,
+                depth_acknowledged=wp.depth_acknowledged,
                 charted_min_depth_m=chart["charted_min_depth_m"],
                 on_land=chart["on_land"],
                 unsurveyed=chart["unsurveyed"],

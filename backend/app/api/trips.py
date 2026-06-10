@@ -51,6 +51,7 @@ def waypoint_out(wp: RouteWaypoint) -> WaypointOut:
         waypoint_type=wp.waypoint_type,
         is_auto_routed=wp.is_auto_routed,
         leg_mode=wp.leg_mode,
+        depth_acknowledged=wp.depth_acknowledged,
     )
 
 
@@ -245,6 +246,7 @@ async def replace_waypoints(
                 waypoint_type=wp_type,
                 is_auto_routed=False,
                 leg_mode=wp.leg_mode,
+                depth_acknowledged=wp.depth_acknowledged,
             )
         )
 
