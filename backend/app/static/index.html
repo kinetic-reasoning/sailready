@@ -216,7 +216,7 @@ let lastScore = null;
 document.querySelectorAll('.viewbtn').forEach(b => b.onclick = () => {
   legView = b.dataset.view;
   document.querySelectorAll('.viewbtn').forEach(x => x.classList.toggle('active', x===b));
-  if (lastScore) drawScoreOverlay(lastScore);
+  if (lastScore) { drawScoreOverlay(lastScore); renderDrivers(lastScore); }
 });
 
 function drawScoreOverlay(r) {
@@ -382,6 +382,18 @@ function renderMeasured(summary) {
 const deg = d => d==null ? '–' : Math.round(d)+'°';
 const num = (v,unit='') => v==null ? '–' : v+unit;
 
+function renderDrivers(r) {
+  // leg-specific drivers follow the view toggle; trip-wide ones (no leg —
+  // e.g. NWS warnings) always show
+  const shown = r.drivers.filter(d => legView==='both' || !d.leg || d.leg===legView);
+  const hidden = r.drivers.length - shown.length;
+  const title = legView==='both' ? 'Drivers' : `Drivers — ${legView==='outbound'?'▸ outbound':'◂ return'}`;
+  $('drivers').innerHTML = `<h2>${title}</h2>` + (shown.map(d=>
+    `<div class="driver ${d.severity}">${d.severity==='violation'?'⛔':d.severity==='warning'?'⚠️':'ℹ️'} ${d.description}${d.is_interpolated?' <i>(interpolated)</i>':''}</div>`
+  ).join('') || '<div class="driver ok">All checks within limits on this leg direction.</div>')
+  + (hidden>0 ? `<span class="hint">${hidden} driver${hidden>1?'s':''} on the other direction — switch view to see.</span>` : '');
+}
+
 function renderScore(r) {
   $('scoreBig').textContent = r.score+'%';
   $('scoreBig').className = 'score-big '+scoreClass(r.score);
@@ -394,9 +406,7 @@ function renderScore(r) {
     ${r.scored_at ? `<div class="kv"><span>Scored</span><b>${fmtT(r.scored_at)}</b></div>` : ''}`;
   $('suggestions').innerHTML = r.suggestions.map(s=>`<div class="sug">💡 ${s.description}</div>`).join('');
   renderMeasured(r.conditions_summary);
-  $('drivers').innerHTML = '<h2>Drivers</h2>' + (r.drivers.map(d=>
-    `<div class="driver ${d.severity}">${d.severity==='violation'?'⛔':d.severity==='warning'?'⚠️':'ℹ️'} ${d.description}${d.is_interpolated?' <i>(interpolated)</i>':''}</div>`
-  ).join('') || '<div class="driver ok">All checks within limits.</div>');
+  renderDrivers(r);
   $('legs').innerHTML = '<h2>Legs — everything sampled</h2><table>'+
     '<tr><th>Leg</th><th>Dep</th><th>Crs</th><th>Steer</th><th>nm</th><th>Wind</th><th>∠</th><th>Wave</th><th>Rain</th><th>Cur±</th><th>Boat</th><th>SOG</th><th>Mode</th></tr>'+
     r.legs.map(l=>{
