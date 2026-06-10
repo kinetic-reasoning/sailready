@@ -66,7 +66,7 @@ async def rescore_trip(db: AsyncSession, trip: Trip) -> ScoreResult:
     waypoints = []
     for wp in trip.waypoints:
         pt = to_shape(wp.location)
-        waypoints.append(Waypoint(lat=pt.y, lon=pt.x, name=wp.name))
+        waypoints.append(Waypoint(lat=pt.y, lon=pt.x, name=wp.name, leg_mode=wp.leg_mode))
 
     t_from = trip.departure_time - CONDITIONS_PAD_BEFORE
     t_to = trip.return_by_time + CONDITIONS_PAD_AFTER

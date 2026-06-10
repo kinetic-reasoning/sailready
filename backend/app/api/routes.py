@@ -144,6 +144,7 @@ async def create_trip_from_route(
                 name=wp.get("name"),
                 waypoint_type=wp_type,
                 is_auto_routed=False,
+                leg_mode=wp.get("leg_mode", "auto"),
             )
         )
 

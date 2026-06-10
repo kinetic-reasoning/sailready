@@ -47,6 +47,10 @@ class Waypoint:
     lat: float
     lon: float
     name: str | None = None
+    # propulsion constraint for the SEGMENT toward the next waypoint
+    # (applies in both directions — stored on the lower-numbered end):
+    # auto | motor (marina channels, tight water) | sail
+    leg_mode: str = "auto"
 
 
 # (waypoint_index, time) -> conditions record or None
@@ -81,6 +85,9 @@ class LegResult:
     tack_headings: str | None = None  # when beating: the two close-hauled headings
     boat_speed_kts: float = 0.0  # through water (VMG along course when tacking)
     current_along_kts: float = 0.0  # signed: + fair, - foul
+    wind_angle_deg: float | None = None  # signed off the bow; + starboard, - port
+    point_of_sail: str | None = None  # no-go | close-hauled | beam reach | broad reach | run
+    leg_mode: str = "auto"  # the constraint that was applied (auto/motor/sail)
     wind_speed_kts: float | None = None
     wind_dir_deg: float | None = None
     wave_height_ft: float | None = None
@@ -129,8 +136,25 @@ def _sail_speed_for_angle(boat: BoatProfile, angle: float) -> float | None:
     return boat.sail_speed_downwind_kts
 
 
+def _signed_wind_angle(wind_from_deg: float, course_deg: float) -> float:
+    """-180..180; positive = wind from starboard side of the bow."""
+    return (wind_from_deg - course_deg + 180) % 360 - 180
+
+
+def point_of_sail(abs_angle: float, no_go_deg: float) -> str:
+    if abs_angle < no_go_deg:
+        return "no-go"
+    if abs_angle <= 60:
+        return "close-hauled"
+    if abs_angle <= 95:
+        return "beam reach"
+    if abs_angle <= 145:
+        return "broad reach"
+    return "run"
+
+
 def _leg_performance(
-    boat: BoatProfile, rec: dict, course: float
+    boat: BoatProfile, rec: dict, course: float, forced_mode: str = "auto"
 ) -> tuple[float, str, str | None]:
     """Effective speed ALONG THE COURSE, mode, and tack headings if beating.
 
@@ -151,12 +175,14 @@ def _leg_performance(
             boat.sail_speed_downwind_kts,
         )
     )
+    if forced_mode == "motor":
+        return motor, "motor", None
     if (
-        boat.sailing_preference == "motor"
-        or wind is None
+        wind is None
         or wind_from is None
-        or wind < MOTOR_WIND_THRESHOLD_KTS
         or not has_polars
+        or (forced_mode != "sail" and boat.sailing_preference == "motor")
+        or (forced_mode != "sail" and wind < MOTOR_WIND_THRESHOLD_KTS)
     ):
         return motor, "motor", None
 
@@ -179,10 +205,11 @@ def _leg_performance(
         sail_speed = min(base, boat.hull_speed_kts)
         mode = "sail"
 
-    if boat.sailing_preference == "fastest" and motor > sail_speed:
-        return motor, "motor", None
-    if sail_speed < MIN_PRACTICAL_SAIL_KTS and motor > sail_speed:
-        return motor, "motor", None
+    if forced_mode != "sail":
+        if boat.sailing_preference == "fastest" and motor > sail_speed:
+            return motor, "motor", None
+        if sail_speed < MIN_PRACTICAL_SAIL_KTS and motor > sail_speed:
+            return motor, "motor", None
     return sail_speed, mode, tack_headings
 
 
@@ -359,9 +386,21 @@ class _Simulation:
             distance = haversine_nm(a.lat, a.lon, b.lat, b.lon)
             rec = self.lookup(i, t) or {}
 
-            speed, mode, tack_headings = _leg_performance(self.boat, rec, course)
+            # segment constraint lives on the lower-numbered end (both directions)
+            forced_mode = self.wps[min(i, j)].leg_mode
+            speed, mode, tack_headings = _leg_performance(self.boat, rec, course, forced_mode)
             along = _current_along_course(rec, course)
             sog = max(speed + along, MIN_SOG_KTS)
+
+            wind_from = rec.get("wind_dir_deg")
+            signed_angle = (
+                round(_signed_wind_angle(wind_from, course)) if wind_from is not None else None
+            )
+            pos = (
+                point_of_sail(abs(signed_angle), self.boat.min_upwind_angle_deg)
+                if signed_angle is not None
+                else None
+            )
 
             if check:
                 self._check_waypoint(i, rec, leg, t)
@@ -403,6 +442,9 @@ class _Simulation:
                         current_speed_kts=rec.get("current_speed_kts"),
                         current_dir_deg=rec.get("current_dir_deg"),
                         current_is_interpolated=bool(rec.get("current_is_interpolated")),
+                        wind_angle_deg=signed_angle,
+                        point_of_sail=pos,
+                        leg_mode=forced_mode,
                     )
                 )
             t = end

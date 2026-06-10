@@ -111,6 +111,7 @@ class WaypointIn(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lon: float = Field(ge=-180, le=180)
     name: str | None = None
+    leg_mode: Literal["auto", "motor", "sail"] = "auto"
 
 
 class WaypointsReplaceIn(BaseModel):
@@ -124,6 +125,7 @@ class WaypointOut(BaseModel):
     name: str | None
     waypoint_type: str
     is_auto_routed: bool
+    leg_mode: str
 
 
 class TripOut(BaseModel):
@@ -154,6 +156,7 @@ class SavedRouteWaypoint(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lon: float = Field(ge=-180, le=180)
     name: str | None = None
+    leg_mode: Literal["auto", "motor", "sail"] = "auto"
 
 
 class SavedRouteIn(BaseModel):

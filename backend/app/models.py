@@ -141,6 +141,7 @@ class RouteWaypoint(Base):
         waypoint_type_enum, server_default=text("'intermediate'")
     )
     is_auto_routed: Mapped[bool] = mapped_column(server_default=text("false"))
+    leg_mode: Mapped[str] = mapped_column(server_default=text("'auto'"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

@@ -50,6 +50,9 @@ class LegOut(BaseModel):
     current_speed_kts: float | None = None
     current_dir_deg: float | None = None
     current_is_interpolated: bool = False
+    wind_angle_deg: float | None = None
+    point_of_sail: str | None = None
+    leg_mode: str = "auto"
 
 
 class ScoreOut(BaseModel):

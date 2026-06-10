@@ -181,6 +181,25 @@ def test_fastest_preference_motors_when_beating_is_slower():
     assert ret.mode == "sail"
 
 
+def test_forced_motor_leg_overrides_good_sailing_wind():
+    """Marina channel: leg 0-1 forced motor even with a perfect beam reach.
+    The constraint is on the segment, so it applies on the return too."""
+    wps = [
+        Waypoint(27.60, -82.70, "marina", leg_mode="motor"),
+        Waypoint(27.60, -82.60, "channel end"),
+        Waypoint(27.60, -82.50, "destination"),
+    ]
+
+    def beam_reach(i, t):
+        return {"wind_speed_kts": 12.0, "wind_dir_deg": 0.0}  # northerly, course east
+
+    result = score_trip(BOAT, wps, DEP, DEP + timedelta(hours=14), 0.5, beam_reach)
+    seg01 = [l for l in result.legs if {l.from_order, l.to_order} == {0, 1}]
+    seg12 = [l for l in result.legs if {l.from_order, l.to_order} == {1, 2}]
+    assert all(l.mode == "motor" and l.leg_mode == "motor" for l in seg01)  # both directions
+    assert all(l.mode == "sail" for l in seg12)  # open water sails the reach
+
+
 def test_crab_corrected_course_to_steer():
     def cross_current(i, t):
         # course 090, current flowing due south (180) at 1kt = pushing to starboard

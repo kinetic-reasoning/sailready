@@ -128,6 +128,7 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© O
 L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {attribution:'© OpenSeaMap'}).addTo(map);
 
 let routeLayer = L.layerGroup().addTo(map);
+let scoreLayer = L.layerGroup().addTo(map);
 let selectedTrip = null;
 let newTripPins = [];
 let newTripMode = false;
@@ -154,17 +155,65 @@ async function loadTrips() {
     el.onclick = () => selectTrip(el.dataset.id));
 }
 
+const LEG_MODE_LABEL = {auto:'Auto (engine decides)', motor:'Motor only', sail:'Sail only'};
+
+function legModePopup(i, w, total) {
+  if (i === total-1) return `<b>${w.name||'destination'}</b>`;
+  const btns = ['auto','motor','sail'].map(m =>
+    `<button onclick="setLegMode(${i},'${m}')" style="margin:2px;padding:4px 8px;cursor:pointer;${w.leg_mode===m?'font-weight:bold;outline:2px solid #4cc9f0;':''}">${m}</button>`
+  ).join('');
+  return `<b>${w.name||'waypoint '+i}</b><br>Leg ${i}→${i+1}: <b>${LEG_MODE_LABEL[w.leg_mode||'auto']}</b><br>${btns}`;
+}
+
+window.setLegMode = async (i, mode) => {
+  if (!selectedTrip || selectedTrip.status !== 'planning') { status('Leg modes editable on planning trips only'); return; }
+  const wps = selectedTrip.waypoints.map(w => ({lat:w.lat, lon:w.lon, name:w.name, leg_mode:w.leg_mode||'auto'}));
+  wps[i].leg_mode = mode;
+  try {
+    await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints: wps})});
+    await selectTrip(selectedTrip.id);
+    status(`Leg ${i}→${i+1} set to ${mode} — re-score to update.`);
+  } catch(e) { status('Failed: '+e.message); }
+};
+
 function drawRoute(waypoints) {
-  routeLayer.clearLayers();
+  routeLayer.clearLayers(); scoreLayer.clearLayers();
   if (!waypoints.length) return;
   const pts = waypoints.map(w=>[w.lat,w.lon]);
   L.polyline(pts, {color:'#4cc9f0', weight:3}).addTo(routeLayer);
   waypoints.forEach((w,i)=>{
     const kind = w.waypoint_type ?? (i===0?'start':i===waypoints.length-1?'destination':'intermediate');
-    L.circleMarker([w.lat,w.lon], {radius:6, color: kind==='start'?'#52d273':kind==='destination'?'#ff5d5d':'#4cc9f0', fillOpacity:.9})
-      .bindTooltip(`${i}: ${w.name||kind}`).addTo(routeLayer);
+    const m = L.circleMarker([w.lat,w.lon], {radius:6, color: kind==='start'?'#52d273':kind==='destination'?'#ff5d5d':'#4cc9f0', fillOpacity:.9})
+      .bindTooltip(`${i}: ${w.name||kind}${w.leg_mode && w.leg_mode!=='auto' ? ' ['+w.leg_mode+'→]' : ''}`)
+      .addTo(routeLayer);
+    m.bindPopup(legModePopup(i, w, waypoints.length));
   });
   map.fitBounds(L.latLngBounds(pts).pad(0.25));
+}
+
+const MODE_COLOR = {motor:'#9aa5b1', sail:'#52d273', 'sail-tack':'#ffd166'};
+
+function drawScoreOverlay(r) {
+  scoreLayer.clearLayers();
+  if (!selectedTrip || !selectedTrip.waypoints.length) return;
+  const wp = o => selectedTrip.waypoints.find(w=>w.sequence_order===o);
+  r.legs.forEach(l => {
+    const a = wp(l.from_order), b = wp(l.to_order);
+    if (!a || !b) return;
+    L.polyline([[a.lat,a.lon],[b.lat,b.lon]], {
+      color: MODE_COLOR[l.mode]||'#4cc9f0', weight: l.leg==='outbound'?5:3,
+      dashArray: l.leg==='return'?'8 8':null, opacity:.9,
+    }).bindTooltip(`${l.leg} ${l.from_order}→${l.to_order}: ${l.mode}${l.point_of_sail?' · '+l.point_of_sail:''} · ${l.sog_kts}kt SOG`).addTo(scoreLayer);
+    // wind arrow at the midpoint of outbound legs, pointing where the wind blows TOWARD
+    if (l.leg==='outbound' && l.wind_dir_deg!=null) {
+      const mid = [(a.lat+b.lat)/2, (a.lon+b.lon)/2];
+      const rot = (l.wind_dir_deg+180-90); // CSS rotate: glyph ➤ points right (090°)
+      L.marker(mid, {icon: L.divIcon({className:'', iconSize:[40,20], html:
+        `<div style="transform:rotate(${rot}deg);font-size:18px;color:#4cc9f0;text-shadow:0 0 3px #000">➤</div>`+
+        `<div style="font-size:10px;color:#fff;text-shadow:0 0 3px #000;white-space:nowrap">${Math.round(l.wind_speed_kts||0)}kt</div>`
+      }), interactive:false}).addTo(scoreLayer);
+    }
+  });
 }
 
 async function selectTrip(id) {
@@ -301,17 +350,20 @@ function renderScore(r) {
     `<div class="driver ${d.severity}">${d.severity==='violation'?'⛔':d.severity==='warning'?'⚠️':'ℹ️'} ${d.description}${d.is_interpolated?' <i>(interpolated)</i>':''}</div>`
   ).join('') || '<div class="driver ok">All checks within limits.</div>');
   $('legs').innerHTML = '<h2>Legs — everything sampled</h2><table>'+
-    '<tr><th>Leg</th><th>Dep</th><th>Crs</th><th>Steer</th><th>nm</th><th>Wind</th><th>Wave</th><th>Rain</th><th>Cur±</th><th>Boat</th><th>SOG</th><th>Mode</th></tr>'+
+    '<tr><th>Leg</th><th>Dep</th><th>Crs</th><th>Steer</th><th>nm</th><th>Wind</th><th>∠</th><th>Wave</th><th>Rain</th><th>Cur±</th><th>Boat</th><th>SOG</th><th>Mode</th></tr>'+
     r.legs.map(l=>{
       const wind = l.wind_speed_kts!=null ? `${Math.round(l.wind_speed_kts)}kt@${deg(l.wind_dir_deg)}` : '–';
+      const angle = l.wind_angle_deg!=null ? `${Math.abs(l.wind_angle_deg)}°${l.wind_angle_deg>=0?'S':'P'}` : '–';
+      const pos = l.point_of_sail ? `<br><small class="hint">${l.point_of_sail}</small>` : '';
       const cur = l.current_along_kts ? `${l.current_along_kts>0?'+':''}${l.current_along_kts}${l.current_is_interpolated?'*':''}` : '0';
       const steer = l.mode==='sail-tack' ? `<b>tack ${l.tack_headings}</b>` : (l.cts_deg!=null ? deg(l.cts_deg) : '–');
-      const modeIcon = l.mode==='sail'?'⛵':l.mode==='sail-tack'?'⛵⇄':'⚙️';
+      const modeIcon = (l.mode==='sail'?'⛵':l.mode==='sail-tack'?'⛵⇄':'⚙️') + (l.leg_mode!=='auto'?'<br><small class="hint">forced</small>':'');
       return `<tr><td>${l.leg==='outbound'?'▸':'◂'} ${l.from_order}→${l.to_order}</td><td>${new Date(l.start).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</td>`+
-        `<td>${deg(l.course_deg)}</td><td>${steer}</td><td>${l.distance_nm}</td><td>${wind}</td><td>${num(l.wave_height_ft,"'")}</td>`+
+        `<td>${deg(l.course_deg)}</td><td>${steer}</td><td>${l.distance_nm}</td><td>${wind}</td><td>${angle}${pos}</td><td>${num(l.wave_height_ft,"'")}</td>`+
         `<td>${num(l.rain_prob_pct,'%')}</td><td>${cur}</td><td>${l.boat_speed_kts}</td><td><b>${l.sog_kts}</b></td><td>${modeIcon}</td></tr>`;
     }).join('')+'</table>'+
-    '<span class="hint">Crs = rhumb-line course (true). Steer = crab-corrected course to steer; when beating (⛵⇄) the two tack headings are shown and Boat = VMG along the rhumb. Cur± = current along course, + fair / − foul, * = interpolated. SOG = effective speed ± current.</span>';
+    '<span class="hint">Crs = rhumb course (true). Steer = crab-corrected; beating (⛵⇄) shows tack headings, Boat = VMG. ∠ = wind angle off bow (S = starboard, P = port) + point of sail. Cur± = current along course (+ fair / − foul, * interpolated). Click a waypoint on the map to force motor/sail for its leg.</span>';
+  drawScoreOverlay(r);
 }
 
 $('scoreBtn').onclick = async () => {
