@@ -17,6 +17,7 @@
 | A6 | **Saved routes + feedback UI** | Both APIs exist; surface them (save current route, instantiate trip from template, post-trip thumbs + actuals form). | TODO |
 | A7 | **API integration tests** | httpx test client against the stack: auth context, RLS isolation, trip lifecycle, score persistence. Engine already covered (18 tests). | TODO |
 | A8 | **Long-leg conditions subdivision** | Conditions are sampled per waypoint at arrival time; a leg uses its START point's conditions. Fine at day-sail pin density, wrong for a 60nm leg (Tampa->Key West). Auto-subdivide legs every ~5-10nm for sampling without adding visible waypoints. | TODO |
+| A9 | **Local-knowledge waypoint override** | ENC DRVAL1 is the conservative minimum of a whole depth polygon — Shell Point creek charts 3.0ft while soundings beside the pins read 3.9-6.9ft. Let the skipper acknowledge a flagged waypoint ("I know this channel"), downgrading violation->warning with an audit note in drivers. Real fix for channel-grade depth is eHydro (C6). | TODO |
 
 ## Milestone B — "Take it to sea" (the co-pilot)
 
@@ -36,6 +37,7 @@
 | C3 | **Security hardening pass** | Secrets Manager, security headers/CSP, per-user rate limiting, CORS lockdown, RDS backups, auth audit log, tile-endpoint rate limit. |
 | C4 | **Bridge clearance check** | Ingest BRIDGE (VERCLR) from ENC cells; air-draft violation on route legs crossing under. |
 | C5 | **Weather window finder** | POST /trips/windows — score all viable windows over the forecast horizon, ranked. |
+| C6 | **USACE eHydro channel surveys** | Channel-grade depth data (the source Aqua Map uses) layered over ENC DRVAL1 minimums — fixes the Shell Point creek conservatism properly (SPEC §6). |
 
 ## Milestone D — "Beta & delight"
 

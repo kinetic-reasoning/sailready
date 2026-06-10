@@ -176,11 +176,26 @@ async function loadTrips() {
 const LEG_MODE_LABEL = {auto:'Auto (engine decides)', motor:'Motor only', sail:'Sail only'};
 
 function legModePopup(i, w, total) {
-  if (i === total-1) return `<b>${w.name||'destination'}</b>`;
+  const depthDiv = `<div id="wpdepth-${i}" style="font-size:11px;color:#555;margin-top:4px">loading chart data…</div>`;
+  if (i === total-1) return `<b>${w.name||'destination'}</b>${depthDiv}`;
   const btns = ['auto','motor','sail'].map(m =>
     `<button onclick="setLegMode(${i},'${m}')" style="margin:2px;padding:4px 8px;cursor:pointer;${w.leg_mode===m?'font-weight:bold;outline:2px solid #4cc9f0;':''}">${m}</button>`
   ).join('');
-  return `<b>${w.name||'waypoint '+i}</b><br>Leg ${i}→${i+1}: <b>${LEG_MODE_LABEL[w.leg_mode||'auto']}</b><br>${btns}`;
+  return `<b>${w.name||'waypoint '+i}</b><br>Leg ${i}→${i+1}: <b>${LEG_MODE_LABEL[w.leg_mode||'auto']}</b><br>${btns}${depthDiv}`;
+}
+
+async function fillWaypointDepth(i, w) {
+  const el = document.getElementById(`wpdepth-${i}`);
+  if (!el || el.dataset.loaded) return;
+  try {
+    const d = await api(`/charts/depth?lat=${w.lat}&lon=${w.lon}`);
+    const flags = [d.on_land&&'⛔ LAND', d.unsurveyed&&'unsurveyed', d.in_dredged_channel&&'dredged channel'].filter(Boolean).join(' · ');
+    const s = d.nearby_soundings[0];
+    el.dataset.loaded = 1;
+    el.innerHTML = `charted min <b>${d.charted_min_depth_ft ?? '—'}ft</b> (conservative area minimum)`
+      + (flags ? `<br>${flags}` : '')
+      + (s ? `<br>nearest sounding <b>${s.depth_ft}ft</b> @ ${s.distance_m}m` : '');
+  } catch(e) { el.textContent = 'chart data unavailable'; }
 }
 
 window.setLegMode = async (i, mode) => {
@@ -237,6 +252,7 @@ function drawRoute(waypoints, fit = true) {
     m.bindTooltip(`${i}: ${w.name||kind}${w.leg_mode && w.leg_mode!=='auto' ? ' ['+w.leg_mode+'→]' : ''}`)
      .bindPopup(legModePopup(i, w, waypoints.length))
      .addTo(routeLayer);
+    m.on('popupopen', () => fillWaypointDepth(i, w));
   });
   if (fit) map.fitBounds(L.latLngBounds(pts).pad(0.25));
 }
