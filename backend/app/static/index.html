@@ -133,7 +133,9 @@ const NOAAEncLayer = L.TileLayer.extend({
   getTileUrl: function(coords) {
     const b = this._tileCoordsToBounds(coords);
     const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
-    return 'https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/export'
+    // NOTE: the chart rendering lives on the MaritimeChartService EXTENSION —
+    // the base MapServer/export silently returns blank transparent tiles
+    return 'https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/exts/MaritimeChartService/MapServer/export'
       + `?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=256,256&format=png32&transparent=true&f=image`;
   }
 });
