@@ -124,8 +124,27 @@ const $ = id => document.getElementById(id);
 const status = m => { $('status').textContent = m; if(m) setTimeout(()=>{ if($('status').textContent===m) $('status').textContent=''; }, 6000); };
 
 const map = L.map('map').setView([27.66, -82.55], 11);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OpenStreetMap'}).addTo(map);
-L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {attribution:'© OpenSeaMap'}).addTo(map);
+const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OpenStreetMap'}).addTo(map);
+
+// NOAA ENC Online — official electronic navigational charts (buoys, daymarks,
+// channels, depth areas). No tile cache exists, so each Leaflet tile is a
+// dynamic ESRI export request for that tile's bbox.
+const NOAAEncLayer = L.TileLayer.extend({
+  getTileUrl: function(coords) {
+    const b = this._tileCoordsToBounds(coords);
+    const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(',');
+    return 'https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/ENCOnline/MapServer/export'
+      + `?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=256,256&format=png32&transparent=true&f=image`;
+  }
+});
+const noaaEnc = new NOAAEncLayer('', {attribution:'NOAA ENC', opacity:0.85, maxZoom:18}).addTo(map);
+const openSeaMap = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {attribution:'© OpenSeaMap'});
+
+L.control.layers(
+  {}, // single base layer
+  {'NOAA ENC charts': noaaEnc, 'OpenSeaMap seamarks': openSeaMap},
+  {collapsed:false, position:'topright'}
+).addTo(map);
 
 let routeLayer = L.layerGroup().addTo(map);
 let scoreLayer = L.layerGroup().addTo(map);
