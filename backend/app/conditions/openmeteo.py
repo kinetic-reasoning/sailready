@@ -4,7 +4,7 @@ Marine-model caveat (see SPEC §6): the wave model is a global swell model and
 under-resolves fetch-limited chop inside Tampa Bay. Values are stored as
 returned; the scoring engine treats in-bay wave data regime-aware.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -45,7 +45,7 @@ async def fetch_wind(lat: float, lon: float, start: datetime, end: datetime) -> 
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.get(FORECAST_URL, params=params)
         resp.raise_for_status()
-    return _parse_hours(
+    hours = _parse_hours(
         resp.json(),
         {
             "wind_speed_10m": "wind_speed_kts",
@@ -56,6 +56,19 @@ async def fetch_wind(lat: float, lon: float, start: datetime, end: datetime) -> 
             "weather_code": "weather_code",
         },
     )
+    # Open-Meteo semantics: wind_gusts_10m at hour T is the max gust of the
+    # PRECEDING hour, while wind_speed_10m is the mean AT hour T. On building
+    # wind this makes raw "gusts" trail below sustained speed. Re-align each
+    # hour's gust to the value reported at T+1 (the max DURING this hour) and
+    # floor at sustained speed — a gust is by definition >= the mean.
+    raw_gusts = {t: rec.get("wind_gust_kts") for t, rec in hours.items()}
+    for t, rec in hours.items():
+        gust = raw_gusts.get(t + timedelta(hours=1), raw_gusts.get(t))
+        wind = rec.get("wind_speed_kts")
+        if gust is not None and wind is not None and gust < wind:
+            gust = wind
+        rec["wind_gust_kts"] = gust
+    return hours
 
 
 async def fetch_waves(lat: float, lon: float, start: datetime, end: datetime) -> dict[datetime, dict]:
