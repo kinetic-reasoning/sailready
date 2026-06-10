@@ -190,11 +190,30 @@ function legModePopup(i, w, total) {
   return `<b>${w.name||'waypoint '+i}</b><br>Leg ${i}→${i+1}: <b>${LEG_MODE_LABEL[w.leg_mode||'auto']}</b><br>${btns}${depthDiv}${ackBtn}`;
 }
 
+const depthCache = {}; // "lat,lon" -> chart depth payload
+
+async function waypointDepth(w) {
+  const key = `${w.lat},${w.lon}`;
+  if (!depthCache[key]) depthCache[key] = api(`/charts/depth?lat=${w.lat}&lon=${w.lon}`);
+  return depthCache[key];
+}
+
+function depthShort(d) {
+  if (d.on_land) return '⛔ charted LAND';
+  const parts = [];
+  parts.push(d.charted_min_depth_ft != null ? `charted ${d.charted_min_depth_ft}ft` : 'no depth data');
+  if (d.in_dredged_channel) parts.push('dredged');
+  if (d.unsurveyed) parts.push('unsurveyed');
+  const s = d.nearby_soundings[0];
+  if (s) parts.push(`snd ${s.depth_ft}ft@${s.distance_m}m`);
+  return parts.join(' · ');
+}
+
 async function fillWaypointDepth(i, w) {
   const el = document.getElementById(`wpdepth-${i}`);
   if (!el || el.dataset.loaded) return;
   try {
-    const d = await api(`/charts/depth?lat=${w.lat}&lon=${w.lon}`);
+    const d = await waypointDepth(w);
     const flags = [d.on_land&&'⛔ LAND', d.unsurveyed&&'unsurveyed', d.in_dredged_channel&&'dredged channel'].filter(Boolean).join(' · ');
     const s = d.nearby_soundings[0];
     el.dataset.loaded = 1;
@@ -272,10 +291,15 @@ function drawRoute(waypoints, fit = true) {
     } else {
       m = L.circleMarker([w.lat,w.lon], {radius:6, color, fillOpacity:.9});
     }
-    m.bindTooltip(`${i}: ${w.name||kind}${w.leg_mode && w.leg_mode!=='auto' ? ' ['+w.leg_mode+'→]' : ''}`)
+    const baseTip = `${i}: ${w.name||kind}`
+      + (w.leg_mode && w.leg_mode!=='auto' ? ' ['+w.leg_mode+'→]' : '')
+      + (w.depth_acknowledged ? ' ✓ack' : '');
+    m.bindTooltip(baseTip)
      .bindPopup(legModePopup(i, w, waypoints.length))
      .addTo(routeLayer);
     m.on('popupopen', () => fillWaypointDepth(i, w));
+    // enrich the hover tooltip with charted depth as soon as it loads
+    waypointDepth(w).then(d => m.setTooltipContent(`${baseTip}<br>${depthShort(d)}`)).catch(()=>{});
   });
   if (fit) map.fitBounds(L.latLngBounds(pts).pad(0.25));
 }
