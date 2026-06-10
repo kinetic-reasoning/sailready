@@ -30,9 +30,11 @@ MIN_SOG_KTS = 0.3  # floor so simulation can't divide by ~zero
 # the sustained-wind comfort limit are seamanship, not a no-go
 GUST_TOLERANCE = 1.2
 
-# Grounding: required water = draft + margin; available = charted depth (MLLW)
-# + predicted tide at the time you'll be there
-GROUNDING_MARGIN_FT = 1.0
+# Grounding: required water = draft + the boat's margin setting; available =
+# charted depth (below MLLW) + predicted tide (above MLLW) at arrival time.
+# Datum-correct at zero margin — the margin is the skipper's comfort padding
+# (negative tides beyond the mean, wind setdown, sounding error).
+DEFAULT_GROUNDING_MARGIN_FT = 1.0
 M_TO_FT = 3.28084
 
 
@@ -40,6 +42,7 @@ M_TO_FT = 3.28084
 class BoatProfile:
     hull_speed_kts: float
     draft_ft: float | None = None  # grounding check skipped if unknown
+    grounding_margin_ft: float = DEFAULT_GROUNDING_MARGIN_FT
     motor_speed_kts: float | None = None
     sail_speed_upwind_kts: float | None = None
     sail_speed_reach_kts: float | None = None
@@ -423,11 +426,11 @@ class _Simulation:
         # only the dedupe of land/unsurveyed/nodata is per-waypoint.
         tide_ft = rec.get("tide_height_ft") or 0.0
         available = wp.charted_min_depth_m * M_TO_FT + tide_ft
-        required = b.draft_ft + GROUNDING_MARGIN_FT
+        required = b.draft_ft + b.grounding_margin_ft
 
         local = when.astimezone(when.tzinfo or timezone.utc)
         detail = (
-            f"need {required:.1f}ft (draft {b.draft_ft:.1f} + {GROUNDING_MARGIN_FT:.0f}ft margin), "
+            f"need {required:.1f}ft (draft {b.draft_ft:.1f} + {b.grounding_margin_ft:.1f}ft margin), "
             f"have {available:.1f}ft (charted {wp.charted_min_depth_m * M_TO_FT:.1f} + "
             f"tide {tide_ft:.1f}) at {label}, {local:%a %H:%M %Z}"
         )
@@ -694,7 +697,7 @@ def score_trip(
         # need/have so ratio>1 = trouble, matching every other row's coloring
         "depth_need_vs_have_ft": {
             "value": (
-                round(boat.draft_ft + GROUNDING_MARGIN_FT, 1)
+                round(boat.draft_ft + boat.grounding_margin_ft, 1)
                 if boat.draft_ft is not None and sim._depth_worst_available_ft is not None
                 else None
             ),

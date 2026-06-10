@@ -83,6 +83,7 @@ class Boat(Base):
     max_adverse_current_kts: Mapped[Decimal | None]
     sailing_preference: Mapped[str] = mapped_column(server_default=text("'sail'"))
     min_upwind_angle_deg: Mapped[Decimal] = mapped_column(server_default=text("45"))
+    grounding_margin_ft: Mapped[Decimal] = mapped_column(server_default=text("1.0"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

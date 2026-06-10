@@ -346,6 +346,36 @@ def test_land_cannot_be_acknowledged():
     )
 
 
+def test_zero_margin_clears_what_default_margin_flags():
+    """Charted 1.2m (3.9ft) at 0.0 tide: draft 3.5 clears with 0 margin
+    (datum-correct — charted depth IS the water at MLLW), flags with 1ft."""
+    from dataclasses import replace
+
+    wps = [
+        Waypoint(27.72, -82.40, "start", charted_min_depth_m=3.0),
+        Waypoint(27.66, -82.55, "thin", charted_min_depth_m=1.2),
+        Waypoint(27.60, -82.70, "destination", charted_min_depth_m=3.0),
+    ]
+
+    def dead_low(i, t):
+        rec = dict(benign(i, t))
+        rec["tide_height_ft"] = 0.0
+        return rec
+
+    flagged = score_trip(BOAT, wps, DEP, DEP + timedelta(hours=12), 1.0, dead_low)
+    assert any(
+        d.constraint_type == "depth" and d.severity == "violation" for d in flagged.drivers
+    )
+
+    confident = replace(BOAT, grounding_margin_ft=0.0)
+    cleared = score_trip(confident, wps, DEP, DEP + timedelta(hours=12), 1.0, dead_low)
+    # need 3.5, have 3.9 -> ratio 0.90: a warning band note, but no violation
+    assert not any(
+        d.constraint_type == "depth" and d.severity == "violation" for d in cleared.drivers
+    )
+    assert cleared.feasible
+
+
 def test_no_draft_skips_grounding():
     from dataclasses import replace
 

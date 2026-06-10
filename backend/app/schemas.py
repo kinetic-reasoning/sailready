@@ -61,6 +61,7 @@ class BoatIn(BaseModel):
     max_adverse_current_kts: float | None = Field(default=None, gt=0)
     sailing_preference: Literal["sail", "fastest", "motor"] = "sail"
     min_upwind_angle_deg: float = Field(default=45, ge=30, le=70)
+    grounding_margin_ft: float = Field(default=1.0, ge=0, le=5)
 
 
 # --- trips -------------------------------------------------------------------
@@ -264,5 +265,6 @@ class BoatOut(BaseModel):
     max_adverse_current_kts: float | None
     sailing_preference: str
     min_upwind_angle_deg: float
+    grounding_margin_ft: float
     created_at: datetime
     updated_at: datetime
