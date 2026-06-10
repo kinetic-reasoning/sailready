@@ -189,24 +189,56 @@ window.setLegMode = async (i, mode) => {
   wps[i].leg_mode = mode;
   try {
     await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints: wps})});
-    await selectTrip(selectedTrip.id);
+    await selectTrip(selectedTrip.id, false);
     status(`Leg ${i}→${i+1} set to ${mode} — re-score to update.`);
   } catch(e) { status('Failed: '+e.message); }
 };
 
-function drawRoute(waypoints) {
+async function moveWaypoint(i, lat, lon) {
+  const wps = selectedTrip.waypoints.map(w => ({lat:w.lat, lon:w.lon, name:w.name, leg_mode:w.leg_mode||'auto'}));
+  wps[i] = {...wps[i], lat:+lat.toFixed(5), lon:+lon.toFixed(5)};
+  try {
+    await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints: wps})});
+    // dragging the start/destination also updates the trip's own locations
+    if (i === 0 || i === wps.length-1) {
+      const t = selectedTrip;
+      await api('/trips/'+t.id, {method:'PUT', body: JSON.stringify({
+        boat_id: t.boat_id, name: t.name,
+        departure_location: i===0 ? {lat:wps[0].lat, lon:wps[0].lon, name:t.departure_location.name} : t.departure_location,
+        destination_location: i===wps.length-1 ? {lat:wps[i].lat, lon:wps[i].lon, name:t.destination_location.name} : t.destination_location,
+        departure_time: t.departure_time, return_by_time: t.return_by_time,
+        time_at_destination_hrs: t.time_at_destination_hrs,
+      })});
+    }
+    await selectTrip(selectedTrip.id, false); // keep the current map view
+    status(`Waypoint ${i} moved — re-score to update.`);
+  } catch(e) { status('Move failed: '+e.message); await selectTrip(selectedTrip.id, false); }
+}
+
+function drawRoute(waypoints, fit = true) {
   routeLayer.clearLayers(); scoreLayer.clearLayers();
   if (!waypoints.length) return;
   const pts = waypoints.map(w=>[w.lat,w.lon]);
-  L.polyline(pts, {color:'#4cc9f0', weight:3}).addTo(routeLayer);
+  const line = L.polyline(pts, {color:'#4cc9f0', weight:3}).addTo(routeLayer);
+  const editable = selectedTrip && selectedTrip.status === 'planning';
   waypoints.forEach((w,i)=>{
     const kind = w.waypoint_type ?? (i===0?'start':i===waypoints.length-1?'destination':'intermediate');
-    const m = L.circleMarker([w.lat,w.lon], {radius:6, color: kind==='start'?'#52d273':kind==='destination'?'#ff5d5d':'#4cc9f0', fillOpacity:.9})
-      .bindTooltip(`${i}: ${w.name||kind}${w.leg_mode && w.leg_mode!=='auto' ? ' ['+w.leg_mode+'→]' : ''}`)
-      .addTo(routeLayer);
-    m.bindPopup(legModePopup(i, w, waypoints.length));
+    const color = kind==='start'?'#52d273':kind==='destination'?'#ff5d5d':'#4cc9f0';
+    let m;
+    if (editable) {
+      // draggable pin: nudge a waypoint out of the shallows without redrawing
+      m = L.marker([w.lat,w.lon], {draggable:true, icon: L.divIcon({className:'', iconSize:[16,16], iconAnchor:[8,8],
+        html:`<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #0d1b2a;box-shadow:0 0 5px #000;cursor:grab"></div>`})});
+      m.on('drag', e => { const arr = line.getLatLngs(); arr[i] = e.target.getLatLng(); line.setLatLngs(arr); });
+      m.on('dragend', e => { const ll = e.target.getLatLng(); moveWaypoint(i, ll.lat, ll.lng); });
+    } else {
+      m = L.circleMarker([w.lat,w.lon], {radius:6, color, fillOpacity:.9});
+    }
+    m.bindTooltip(`${i}: ${w.name||kind}${w.leg_mode && w.leg_mode!=='auto' ? ' ['+w.leg_mode+'→]' : ''}`)
+     .bindPopup(legModePopup(i, w, waypoints.length))
+     .addTo(routeLayer);
   });
-  map.fitBounds(L.latLngBounds(pts).pad(0.25));
+  if (fit) map.fitBounds(L.latLngBounds(pts).pad(0.25));
 }
 
 const MODE_COLOR = {motor:'#9aa5b1', sail:'#52d273', 'sail-tack':'#ffd166'};
@@ -261,16 +293,17 @@ legendCtl.onAdd = () => {
     '<span style="color:#52d273">━</span> sail &nbsp;'+
     '<span style="color:#ffd166">━</span> beating &nbsp;'+
     '<span style="color:#9aa5b1">━</span> motor<br>'+
-    'solid = outbound · dashed = return';
+    'solid = outbound · dashed = return<br>'+
+    'planning trips: drag pins to adjust · click pin for motor/sail';
   return div;
 };
 legendCtl.addTo(map);
 
-async function selectTrip(id) {
+async function selectTrip(id, fit = true) {
   selectedTrip = await api('/trips/'+id);
   newTripMode=false; redrawMode=false; $('newTripForm').style.display='none';
   $('scorePanel').style.display='block';
-  drawRoute(selectedTrip.waypoints);
+  drawRoute(selectedTrip.waypoints, fit);
   renderScoreSummary();
   renderManage();
   loadTrips();
