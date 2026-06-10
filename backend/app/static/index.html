@@ -216,8 +216,11 @@ let lastScore = null;
 document.querySelectorAll('.viewbtn').forEach(b => b.onclick = () => {
   legView = b.dataset.view;
   document.querySelectorAll('.viewbtn').forEach(x => x.classList.toggle('active', x===b));
-  if (lastScore) { drawScoreOverlay(lastScore); renderDrivers(lastScore); }
+  if (lastScore) { drawScoreOverlay(lastScore); renderDrivers(lastScore); renderLegs(lastScore); renderMeasured(lastScore); }
 });
+
+const visibleLegs = r => r.legs.filter(l => legView==='both' || l.leg===legView);
+const viewTitle = () => legView==='both' ? '' : (legView==='outbound' ? ' — ▸ outbound' : ' — ◂ return');
 
 function drawScoreOverlay(r) {
   lastScore = r;
@@ -366,17 +369,32 @@ const MEASURE_LABELS = {
   window_hours: ['Time needed', 'h'],
 };
 
-function renderMeasured(summary) {
-  const rows = Object.entries(summary || {}).map(([key, m]) => {
+function renderMeasured(r) {
+  const summary = r.conditions_summary || {};
+  const legs = visibleLegs(r);
+  const maxOf = vals => { const p = vals.filter(v => v != null); return p.length ? Math.round(Math.max(...p)*100)/100 : null; };
+  // recompute direction-scoped maxima from the visible legs; limits come from
+  // the server summary. window_hours is the whole round trip — no direction.
+  const scoped = {
+    max_wind_kts: maxOf(legs.map(l=>l.wind_speed_kts)),
+    max_gust_kts: maxOf(legs.map(l=>l.wind_gust_kts)),
+    max_wave_ft: maxOf(legs.map(l=>l.wave_height_ft)),
+    max_rain_prob_pct: maxOf(legs.map(l=>l.rain_prob_pct)),
+    max_adverse_current_kts: maxOf(legs.map(l=>l.current_along_kts<0 ? -l.current_along_kts : null)) ?? 0,
+  };
+  const rows = Object.entries(summary).map(([key, m]) => {
     const [label, unit] = MEASURE_LABELS[key] || [key, ''];
-    if (m.value == null) return `<div class="measure"><span>${label}</span><span class="hint">no data</span></div>`;
-    const ratio = m.limit ? m.value / m.limit : 0;
+    const wholeTrip = key === 'window_hours';
+    const value = wholeTrip ? m.value : scoped[key];
+    if (value == null) return `<div class="measure"><span>${label}</span><span class="hint">no data</span></div>`;
+    const ratio = m.limit ? value / m.limit : 0;
     const cls = ratio > 1 ? 'r' : ratio >= 0.85 ? 'y' : 'g';
     const icon = ratio > 1 ? '⛔' : ratio >= 0.85 ? '⚠️' : '✓';
-    return `<div class="measure"><span>${label}</span>
-      <b class="${cls}">${icon} ${m.value}${unit} <span class="hint">/ limit ${m.limit}${unit}</span></b></div>`;
+    const tag = wholeTrip && legView!=='both' ? ' <span class="hint">(whole trip)</span>' : '';
+    return `<div class="measure"><span>${label}${tag}</span>
+      <b class="${cls}">${icon} ${value}${unit} <span class="hint">/ limit ${m.limit}${unit}</span></b></div>`;
   }).join('');
-  $('measured').innerHTML = rows ? '<h2>Measured along your route</h2>'+rows : '';
+  $('measured').innerHTML = rows ? `<h2>Measured along your route${viewTitle()}</h2>`+rows : '';
 }
 
 const deg = d => d==null ? '–' : Math.round(d)+'°';
@@ -405,11 +423,16 @@ function renderScore(r) {
     <div class="kv"><span>Max reachable distance</span><b>${r.max_reachable_distance_nm??'—'} nm</b></div>
     ${r.scored_at ? `<div class="kv"><span>Scored</span><b>${fmtT(r.scored_at)}</b></div>` : ''}`;
   $('suggestions').innerHTML = r.suggestions.map(s=>`<div class="sug">💡 ${s.description}</div>`).join('');
-  renderMeasured(r.conditions_summary);
+  renderMeasured(r);
   renderDrivers(r);
-  $('legs').innerHTML = '<h2>Legs — everything sampled</h2><table>'+
+  renderLegs(r);
+  drawScoreOverlay(r);
+}
+
+function renderLegs(r) {
+  $('legs').innerHTML = `<h2>Legs — everything sampled${viewTitle()}</h2><table>`+
     '<tr><th>Leg</th><th>Dep</th><th>Crs</th><th>Steer</th><th>nm</th><th>Wind</th><th>∠</th><th>Wave</th><th>Rain</th><th>Cur±</th><th>Boat</th><th>SOG</th><th>Mode</th></tr>'+
-    r.legs.map(l=>{
+    visibleLegs(r).map(l=>{
       const gust = l.wind_gust_kts!=null && l.wind_gust_kts > (l.wind_speed_kts||0)+1 ? `<small class="o"> G${Math.round(l.wind_gust_kts)}</small>` : '';
       const wind = l.wind_speed_kts!=null ? `${Math.round(l.wind_speed_kts)}kt@${deg(l.wind_dir_deg)}${gust}` : '–';
       const angle = l.wind_angle_deg!=null ? `${Math.abs(l.wind_angle_deg)}°${l.wind_angle_deg>=0?'S':'P'}` : '–';
@@ -422,7 +445,6 @@ function renderScore(r) {
         `<td>${num(l.rain_prob_pct,'%')}</td><td>${cur}</td><td>${l.boat_speed_kts}</td><td><b>${l.sog_kts}</b></td><td>${modeIcon}</td></tr>`;
     }).join('')+'</table>'+
     '<span class="hint">Crs = rhumb course (true). Steer = crab-corrected; beating (⛵⇄) shows tack headings, Boat = VMG. ∠ = wind angle off bow (S = starboard, P = port) + point of sail. Cur± = current along course (+ fair / − foul, * interpolated). Click a waypoint on the map to force motor/sail for its leg.</span>';
-  drawScoreOverlay(r);
 }
 
 $('scoreBtn').onclick = async () => {
