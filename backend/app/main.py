@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import boats, conditions, feedback, notifications, routes, trips, users
+from app.api import boats, conditions, feedback, notifications, routes, scores, trips, users
 from app.db import engine
 
 app = FastAPI(title="SailReady API", version="0.1.0")
@@ -12,10 +15,14 @@ API_PREFIX = "/api/v1"
 app.include_router(users.router, prefix=API_PREFIX)
 app.include_router(boats.router, prefix=API_PREFIX)
 app.include_router(trips.router, prefix=API_PREFIX)
+app.include_router(scores.router, prefix=API_PREFIX)
 app.include_router(routes.router, prefix=API_PREFIX)
 app.include_router(feedback.router, prefix=API_PREFIX)
 app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(conditions.router, prefix=API_PREFIX)
+
+# Prototype map UI (the real React PWA arrives in build step 5)
+app.mount("/app", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="app")
 
 
 # Starlette's HTTPException is the base class — registering the handler there
@@ -39,6 +46,7 @@ async def root() -> dict:
     return {
         "name": "SailReady API",
         "version": app.version,
+        "app": "/app",
         "docs": "/docs",
         "health": "/healthz",
         "api": API_PREFIX,

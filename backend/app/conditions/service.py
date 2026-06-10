@@ -100,7 +100,12 @@ async def _cached_source(
 
 
 async def get_hourly_conditions(
-    db: AsyncSession, lat: float, lon: float, t_from: datetime, t_to: datetime
+    db: AsyncSession,
+    lat: float,
+    lon: float,
+    t_from: datetime,
+    t_to: datetime,
+    include_alerts: bool = True,
 ) -> dict:
     """Merged hourly conditions at a point, plus station metadata and live alerts."""
     hours = hour_range(t_from, t_to)
@@ -128,7 +133,7 @@ async def get_hourly_conditions(
             lambda: coops.fetch_currents(current_station, start, end),
         )
 
-    alerts = await nws.fetch_active_alerts(lat, lon)
+    alerts = await nws.fetch_active_alerts(lat, lon) if include_alerts else []
 
     merged = []
     for h in hours:

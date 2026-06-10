@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SailReady — prototype</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#0d1b2a; --panel:#1b263b; --text:#e0e1dd; --muted:#9fb0c3; --accent:#4cc9f0; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:-apple-system,system-ui,sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; }
+  header { padding:10px 16px; background:var(--panel); display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:18px; } header .tag { color:var(--muted); font-size:12px; }
+  main { flex:1; display:flex; min-height:0; }
+  #sidebar { width:380px; overflow-y:auto; background:var(--panel); padding:14px; display:flex; flex-direction:column; gap:14px; }
+  #map { flex:1; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:6px; }
+  select,input,button,textarea { width:100%; padding:8px; border-radius:6px; border:1px solid #3a506b; background:#0d1b2a; color:var(--text); font-size:14px; }
+  button { cursor:pointer; background:#274060; border:none; font-weight:600; }
+  button.primary { background:var(--accent); color:#06283d; }
+  button:disabled { opacity:.45; cursor:default; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  .trip-item { padding:8px 10px; border-radius:6px; background:#22324a; margin-bottom:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
+  .trip-item:hover { background:#2b3f5c; } .trip-item.sel { outline:2px solid var(--accent); }
+  .badge { font-weight:700; padding:2px 8px; border-radius:10px; font-size:13px; background:#444; }
+  .score-big { font-size:44px; font-weight:800; text-align:center; padding:6px 0; }
+  .g { color:#52d273; } .y { color:#ffd166; } .o { color:#ff9442; } .r { color:#ff5d5d; }
+  .bg-g { background:#1d4a2a; } .bg-y { background:#4a431d; } .bg-o { background:#4a311d; } .bg-r { background:#4a1d1d; }
+  .driver { padding:6px 8px; border-left:3px solid; border-radius:4px; background:#22324a; margin-bottom:5px; font-size:12.5px; }
+  .driver.violation { border-color:#ff5d5d; } .driver.warning { border-color:#ffd166; } .driver.ok { border-color:#52d273; }
+  .kv { display:flex; justify-content:space-between; font-size:13px; padding:2px 0; }
+  .kv span:first-child { color:var(--muted); }
+  table { width:100%; font-size:12px; border-collapse:collapse; }
+  td,th { padding:3px 4px; text-align:right; border-bottom:1px solid #2b3f5c; } th:first-child, td:first-child { text-align:left; }
+  .hint { color:var(--muted); font-size:12px; }
+  .sug { background:#1d3a4a; padding:6px 8px; border-radius:4px; font-size:12.5px; margin-bottom:5px; border-left:3px solid var(--accent); }
+  #newTripForm { display:none; flex-direction:column; gap:8px; }
+  label { font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>⛵ SailReady</h1><span class="tag">prototype — local dev</span>
+  <span id="status" class="tag" style="margin-left:auto"></span>
+</header>
+<main>
+  <div id="sidebar">
+    <div>
+      <h2>Trips</h2>
+      <div id="tripList"></div>
+      <button id="newTripBtn">+ New trip (click map to drop route pins)</button>
+    </div>
+
+    <form id="newTripForm">
+      <h2>New Trip</h2>
+      <span class="hint">Click the map to drop waypoints in order: first = departure, last = destination. At least 2 points.</span>
+      <div class="kv"><span>Waypoints dropped</span><b id="wpCount">0</b></div>
+      <label>Name</label><input id="tName" placeholder="Egmont Key Day Sail">
+      <label>Boat</label><select id="tBoat"></select>
+      <div class="row">
+        <div><label>Departure</label><input id="tDep" type="datetime-local"></div>
+        <div><label>Return by</label><input id="tRet" type="datetime-local"></div>
+      </div>
+      <label>Hours at destination</label><input id="tStay" type="number" value="2" min="0" step="0.5">
+      <div class="row">
+        <button type="button" id="tCancel">Cancel</button>
+        <button type="button" id="tUndo">Undo pin</button>
+        <button type="submit" class="primary">Create</button>
+      </div>
+    </form>
+
+    <div id="scorePanel" style="display:none">
+      <h2>Go / No-Go</h2>
+      <div id="scoreBig" class="score-big">—</div>
+      <button id="scoreBtn" class="primary">Score this trip now</button>
+      <div id="scoreMeta" style="margin-top:8px"></div>
+      <div id="suggestions" style="margin-top:8px"></div>
+      <div id="drivers" style="margin-top:8px"></div>
+      <div id="legs" style="margin-top:8px"></div>
+    </div>
+  </div>
+  <div id="map"></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const api = async (path, opts={}) => {
+  const r = await fetch('/api/v1'+path, {headers:{'Content-Type':'application/json'}, ...opts});
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message);
+  return j.data;
+};
+const $ = id => document.getElementById(id);
+const status = m => { $('status').textContent = m; if(m) setTimeout(()=>{ if($('status').textContent===m) $('status').textContent=''; }, 6000); };
+
+const map = L.map('map').setView([27.66, -82.55], 11);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OpenStreetMap'}).addTo(map);
+L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {attribution:'© OpenSeaMap'}).addTo(map);
+
+let routeLayer = L.layerGroup().addTo(map);
+let selectedTrip = null;
+let newTripPins = [];
+let newTripMode = false;
+
+const scoreClass = s => s>=80?'g':s>=60?'y':s>=40?'o':'r';
+const fmtT = iso => new Date(iso).toLocaleString([], {weekday:'short', hour:'2-digit', minute:'2-digit'});
+
+async function loadBoats() {
+  const boats = await api('/boats');
+  $('tBoat').innerHTML = boats.map(b=>`<option value="${b.id}">${b.name} (${b.make} ${b.model})</option>`).join('');
+  return boats;
+}
+
+async function loadTrips() {
+  const trips = await api('/trips');
+  $('tripList').innerHTML = trips.map(t=>{
+    const s = t.current_score;
+    const badge = s==null ? '<span class="badge">unscored</span>'
+      : `<span class="badge bg-${scoreClass(s)} ${scoreClass(s)}">${s}%</span>`;
+    return `<div class="trip-item ${selectedTrip?.id===t.id?'sel':''}" data-id="${t.id}">
+      <span>${t.name||'(unnamed)'}<br><small class="hint">${fmtT(t.departure_time)} · ${t.status}</small></span>${badge}</div>`;
+  }).join('') || '<span class="hint">No trips yet.</span>';
+  document.querySelectorAll('.trip-item').forEach(el =>
+    el.onclick = () => selectTrip(el.dataset.id));
+}
+
+function drawRoute(waypoints) {
+  routeLayer.clearLayers();
+  if (!waypoints.length) return;
+  const pts = waypoints.map(w=>[w.lat,w.lon]);
+  L.polyline(pts, {color:'#4cc9f0', weight:3}).addTo(routeLayer);
+  waypoints.forEach((w,i)=>{
+    const kind = w.waypoint_type ?? (i===0?'start':i===waypoints.length-1?'destination':'intermediate');
+    L.circleMarker([w.lat,w.lon], {radius:6, color: kind==='start'?'#52d273':kind==='destination'?'#ff5d5d':'#4cc9f0', fillOpacity:.9})
+      .bindTooltip(`${i}: ${w.name||kind}`).addTo(routeLayer);
+  });
+  map.fitBounds(L.latLngBounds(pts).pad(0.25));
+}
+
+async function selectTrip(id) {
+  selectedTrip = await api('/trips/'+id);
+  newTripMode=false; $('newTripForm').style.display='none';
+  $('scorePanel').style.display='block';
+  drawRoute(selectedTrip.waypoints);
+  renderScoreSummary();
+  loadTrips();
+}
+
+function renderScoreSummary() {
+  const s = selectedTrip.current_score;
+  $('scoreBig').textContent = s==null?'—':s+'%';
+  $('scoreBig').className = 'score-big '+(s==null?'':scoreClass(s));
+  $('scoreMeta').innerHTML = ''; $('drivers').innerHTML=''; $('legs').innerHTML=''; $('suggestions').innerHTML='';
+  $('scoreBtn').disabled = !selectedTrip.waypoints.length;
+  if (!selectedTrip.waypoints.length)
+    $('scoreMeta').innerHTML = '<span class="hint">This trip has no route waypoints.</span>';
+}
+
+function renderScore(r) {
+  $('scoreBig').textContent = r.score+'%';
+  $('scoreBig').className = 'score-big '+scoreClass(r.score);
+  $('scoreMeta').innerHTML = `
+    <div class="kv"><span>Feasible</span><b class="${r.feasible?'g':'r'}">${r.feasible?'YES':'NO'}</b></div>
+    <div class="kv"><span>Arrive destination</span><b>${fmtT(r.outbound_arrival)}</b></div>
+    <div class="kv"><span>Back home</span><b>${fmtT(r.return_home)}</b></div>
+    <div class="kv"><span>Turn-around deadline</span><b>${r.turn_around_deadline?fmtT(r.turn_around_deadline):'n/a'}</b></div>
+    <div class="kv"><span>Max reachable distance</span><b>${r.max_reachable_distance_nm??'—'} nm</b></div>`;
+  $('suggestions').innerHTML = r.suggestions.map(s=>`<div class="sug">💡 ${s.description}</div>`).join('');
+  $('drivers').innerHTML = '<h2>Drivers</h2>' + (r.drivers.map(d=>
+    `<div class="driver ${d.severity}">${d.severity==='violation'?'⛔':d.severity==='warning'?'⚠️':'ℹ️'} ${d.description}${d.is_interpolated?' <i>(interpolated)</i>':''}</div>`
+  ).join('') || '<div class="driver ok">All checks within limits.</div>');
+  $('legs').innerHTML = '<h2>Legs</h2><table><tr><th>Leg</th><th>Start</th><th>nm</th><th>SOG</th><th>Mode</th></tr>'+
+    r.legs.map(l=>`<tr><td>${l.leg} ${l.from_order}→${l.to_order}</td><td>${fmtT(l.start)}</td><td>${l.distance_nm}</td><td>${l.sog_kts}</td><td>${l.mode}</td></tr>`).join('')+'</table>';
+}
+
+$('scoreBtn').onclick = async () => {
+  if (!selectedTrip) return;
+  $('scoreBtn').disabled = true; $('scoreBtn').textContent = 'Scoring (fetching forecasts)…';
+  try {
+    const r = await api(`/trips/${selectedTrip.id}/score`, {method:'POST'});
+    renderScore(r); loadTrips();
+  } catch(e) { status('Score failed: '+e.message); }
+  $('scoreBtn').disabled = false; $('scoreBtn').textContent = 'Score this trip now';
+};
+
+// --- new trip flow ---
+$('newTripBtn').onclick = async () => {
+  newTripMode = true; newTripPins = []; routeLayer.clearLayers();
+  selectedTrip = null; $('scorePanel').style.display='none';
+  $('newTripForm').style.display='flex'; $('wpCount').textContent='0';
+  const now = new Date(); now.setDate(now.getDate()+1); now.setHours(9,0,0,0);
+  $('tDep').value = now.toISOString().slice(0,16);
+  now.setHours(17); $('tRet').value = now.toISOString().slice(0,16);
+  await loadBoats();
+};
+$('tCancel').onclick = () => { newTripMode=false; newTripPins=[]; routeLayer.clearLayers(); $('newTripForm').style.display='none'; };
+$('tUndo').onclick = () => { newTripPins.pop(); redrawPins(); };
+
+function redrawPins() {
+  drawRouteFromPins();
+  $('wpCount').textContent = newTripPins.length;
+}
+function drawRouteFromPins() {
+  routeLayer.clearLayers();
+  if (!newTripPins.length) return;
+  L.polyline(newTripPins.map(p=>[p.lat,p.lon]), {color:'#4cc9f0', dashArray:'6 6'}).addTo(routeLayer);
+  newTripPins.forEach((p,i)=> L.circleMarker([p.lat,p.lon],{radius:6,color:i===0?'#52d273':'#4cc9f0',fillOpacity:.9}).addTo(routeLayer));
+}
+map.on('click', e => {
+  if (!newTripMode) return;
+  newTripPins.push({lat:+e.latlng.lat.toFixed(5), lon:+e.latlng.lng.toFixed(5)});
+  redrawPins();
+});
+
+$('newTripForm').onsubmit = async e => {
+  e.preventDefault();
+  if (newTripPins.length < 2) { status('Drop at least 2 pins (start + destination)'); return; }
+  try {
+    const dep = new Date($('tDep').value), ret = new Date($('tRet').value);
+    const trip = await api('/trips', {method:'POST', body: JSON.stringify({
+      boat_id: $('tBoat').value,
+      name: $('tName').value || null,
+      departure_location: newTripPins[0],
+      destination_location: newTripPins[newTripPins.length-1],
+      departure_time: dep.toISOString(),
+      return_by_time: ret.toISOString(),
+      time_at_destination_hrs: +$('tStay').value,
+    })});
+    await api(`/trips/${trip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints:newTripPins})});
+    newTripMode=false; newTripPins=[]; $('newTripForm').style.display='none';
+    await loadTrips(); await selectTrip(trip.id);
+    status('Trip created — hit Score.');
+  } catch(err) { status('Create failed: '+err.message); }
+};
+
+loadBoats(); loadTrips();
+</script>
+</body>
+</html>

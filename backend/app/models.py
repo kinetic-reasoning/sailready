@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from geoalchemy2 import Geometry, WKBElement
@@ -21,6 +21,13 @@ routing_type_enum = ENUM("manual", "auto", name="routing_type", create_type=Fals
 waypoint_type_enum = ENUM(
     "start", "intermediate", "destination", name="waypoint_type", create_type=False
 )
+constraint_type_enum = ENUM(
+    "wind", "wave", "current", "depth", "bridge", "time_budget",
+    name="constraint_type",
+    create_type=False,
+)
+severity_enum = ENUM("ok", "warning", "violation", name="severity", create_type=False)
+leg_enum = ENUM("outbound", "return", name="leg", create_type=False)
 notification_type_enum = ENUM(
     "score_drop",
     "score_threshold",
@@ -133,6 +140,47 @@ class RouteWaypoint(Base):
     )
     is_auto_routed: Mapped[bool] = mapped_column(server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class TripScore(Base):
+    __tablename__ = "trip_scores"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    trip_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("trips.id", ondelete="CASCADE")
+    )
+    scored_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    forecast_date: Mapped[date]
+    score: Mapped[int]
+    is_current: Mapped[bool] = mapped_column(server_default=text("true"))
+    turn_around_deadline: Mapped[datetime | None]
+    max_reachable_distance_nm: Mapped[Decimal | None]
+    suggestions: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+
+    drivers: Mapped[list["ScoreDriver"]] = relationship(
+        cascade="all, delete-orphan", lazy="raise"
+    )
+
+
+class ScoreDriver(Base):
+    __tablename__ = "score_drivers"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    trip_score_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("trip_scores.id", ondelete="CASCADE")
+    )
+    constraint_type: Mapped[str] = mapped_column(constraint_type_enum)
+    waypoint_order: Mapped[int | None]
+    leg: Mapped[str | None] = mapped_column(leg_enum)
+    severity: Mapped[str] = mapped_column(severity_enum)
+    actual_value: Mapped[Decimal | None]
+    threshold_value: Mapped[Decimal | None]
+    is_interpolated: Mapped[bool] = mapped_column(server_default=text("false"))
+    description: Mapped[str]
 
 
 class SavedRoute(Base):

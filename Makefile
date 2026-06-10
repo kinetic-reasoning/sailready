@@ -27,6 +27,5 @@ api-shell:
 test:
 	docker compose run --rm api pytest -q
 
-# Placeholder until the scoring engine lands (Step 4) — will invoke the rescore job
 rescore:
-	@echo "scoring engine not built yet (build sequence step 4)"
+	docker compose run --rm api python -m app.jobs.rescore
