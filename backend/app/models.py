@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from geoalchemy2 import Geometry, WKBElement
 from sqlalchemy import DateTime, ForeignKey, func, text
-from sqlalchemy.dialects.postgresql import ENUM, UUID
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -21,6 +21,16 @@ routing_type_enum = ENUM("manual", "auto", name="routing_type", create_type=Fals
 waypoint_type_enum = ENUM(
     "start", "intermediate", "destination", name="waypoint_type", create_type=False
 )
+notification_type_enum = ENUM(
+    "score_drop",
+    "score_threshold",
+    "marine_warning",
+    "departure_reminder",
+    name="notification_type",
+    create_type=False,
+)
+notification_channel_enum = ENUM("email", "in_app", name="notification_channel", create_type=False)
+rating_enum = ENUM("thumbs_up", "thumbs_down", name="rating", create_type=False)
 
 
 class User(Base):
@@ -123,3 +133,68 @@ class RouteWaypoint(Base):
     )
     is_auto_routed: Mapped[bool] = mapped_column(server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class SavedRoute(Base):
+    __tablename__ = "saved_routes"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    name: Mapped[str]
+    departure_location: Mapped[WKBElement] = mapped_column(
+        Geometry(geometry_type="POINT", srid=4326)
+    )
+    destination_location: Mapped[WKBElement] = mapped_column(
+        Geometry(geometry_type="POINT", srid=4326)
+    )
+    waypoints: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    notes: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    last_used_at: Mapped[datetime | None]
+
+
+class TripFeedback(Base):
+    __tablename__ = "trip_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    trip_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("trips.id", ondelete="CASCADE")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    routing_rating: Mapped[str | None] = mapped_column(rating_enum)
+    routing_notes: Mapped[str | None]
+    score_rating: Mapped[str | None] = mapped_column(rating_enum)
+    score_notes: Mapped[str | None]
+    actual_departure_time: Mapped[datetime | None]
+    actual_return_time: Mapped[datetime | None]
+    actual_leg_times: Mapped[list] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    overall_notes: Mapped[str | None]
+    submitted_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    trip_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("trips.id", ondelete="CASCADE")
+    )
+    type: Mapped[str] = mapped_column(notification_type_enum)
+    channel: Mapped[str] = mapped_column(notification_channel_enum)
+    subject: Mapped[str]
+    body: Mapped[str]
+    sent_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    read_at: Mapped[datetime | None]

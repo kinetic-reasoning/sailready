@@ -145,6 +145,95 @@ class TripDetailOut(TripOut):
     waypoints: list[WaypointOut]
 
 
+# --- saved routes --------------------------------------------------------------
+
+
+class SavedRouteWaypoint(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    name: str | None = None
+
+
+class SavedRouteIn(BaseModel):
+    name: str = Field(min_length=1)
+    departure_location: LocationIn
+    destination_location: LocationIn
+    waypoints: list[SavedRouteWaypoint] = Field(min_length=2)
+    notes: str | None = None
+
+
+class SavedRouteOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    departure_location: LocationOut
+    destination_location: LocationOut
+    waypoints: list[SavedRouteWaypoint]
+    notes: str | None
+    created_at: datetime
+    last_used_at: datetime | None
+
+
+class TripFromRouteIn(BaseModel):
+    boat_id: uuid.UUID | None = None  # falls back to the user's default boat
+    name: str | None = None
+    departure_time: datetime
+    return_by_time: datetime
+    time_at_destination_hrs: float = Field(default=0, ge=0)
+
+    _tz_dep = field_validator("departure_time")(_require_tz)
+    _tz_ret = field_validator("return_by_time")(_require_tz)
+
+    @model_validator(mode="after")
+    def window_is_positive(self) -> "TripFromRouteIn":
+        if self.return_by_time <= self.departure_time:
+            raise ValueError("return_by_time must be after departure_time")
+        return self
+
+
+# --- feedback -------------------------------------------------------------------
+
+
+class LegTimeActual(BaseModel):
+    waypoint_order: int
+    predicted_at: datetime | None = None
+    actual_at: datetime | None = None
+
+
+class TripFeedbackIn(BaseModel):
+    routing_rating: Literal["thumbs_up", "thumbs_down"] | None = None
+    routing_notes: str | None = None
+    score_rating: Literal["thumbs_up", "thumbs_down"] | None = None
+    score_notes: str | None = None
+    actual_departure_time: datetime | None = None
+    actual_return_time: datetime | None = None
+    actual_leg_times: list[LegTimeActual] = Field(default_factory=list)
+    overall_notes: str | None = None
+
+
+class TripFeedbackOut(TripFeedbackIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    trip_id: uuid.UUID
+    submitted_at: datetime
+
+
+# --- notifications ----------------------------------------------------------------
+
+
+class NotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    trip_id: uuid.UUID | None
+    type: str
+    channel: str
+    subject: str
+    body: str
+    sent_at: datetime
+    read_at: datetime | None
+
+
 class BoatOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
