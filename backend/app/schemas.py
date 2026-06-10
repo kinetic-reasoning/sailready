@@ -118,6 +118,9 @@ class WaypointIn(BaseModel):
 
 class WaypointsReplaceIn(BaseModel):
     waypoints: list[WaypointIn] = Field(min_length=2)
+    # optimistic concurrency: reject the write if the trip changed since the
+    # client last loaded it (stale tabs were silently wiping newer edits)
+    expected_updated_at: datetime | None = None
 
 
 class WaypointOut(BaseModel):

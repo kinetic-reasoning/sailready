@@ -231,6 +231,14 @@ async def replace_waypoints(
     trip = await get_owned_trip(trip_id, db)
     if trip.status != "planning":
         raise HTTPException(status_code=409, detail=f"cannot edit route of a {trip.status} trip")
+    if (
+        payload.expected_updated_at is not None
+        and trip.updated_at != payload.expected_updated_at
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="trip was modified elsewhere — reload the page and retry",
+        )
 
     await db.execute(delete(RouteWaypoint).where(RouteWaypoint.trip_id == trip_id))
 

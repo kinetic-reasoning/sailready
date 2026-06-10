@@ -21,6 +21,25 @@ from app.db import SessionLocal, engine
 
 app = FastAPI(title="SailReady API", version="0.1.0")
 
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _app_version() -> str:
+    """Cheap deploy marker: the UI's mtime. A long-open tab compares this on
+    every API call and prompts a reload when the server has newer code —
+    stale clients were silently wiping new fields via full-replace PUTs."""
+    try:
+        return str(int((STATIC_DIR / "index.html").stat().st_mtime))
+    except OSError:
+        return "0"
+
+
+@app.middleware("http")
+async def version_header_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-App-Version"] = _app_version()
+    return response
+
 
 @app.middleware("http")
 async def db_session_middleware(request: Request, call_next):
@@ -51,7 +70,7 @@ app.include_router(conditions.router, prefix=API_PREFIX)
 app.include_router(charts.router, prefix=API_PREFIX)
 
 # Prototype map UI (the real React PWA arrives in build step 5)
-app.mount("/app", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="app")
+app.mount("/app", StaticFiles(directory=STATIC_DIR, html=True), name="app")
 
 
 # Starlette's HTTPException is the base class — registering the handler there

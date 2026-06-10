@@ -10,7 +10,7 @@
 | # | Item | Notes | Status |
 |---|---|---|---|
 | A1 | **Grounding check in scoring** | Charted depth + tide-at-arrival vs draft + 1ft margin; land/unsurveyed/unknown-depth-hazard flags; subordinate tide stations (hilo-only, e.g. Shell Point 8726468) cosine-interpolated and flagged. Caught the land waypoint: trip 100% -> 5%. | **DONE** 2026-06-10 |
-| A2 | **Boat + user profile UI** | Form for all boat fields (draft, air draft, beam, speeds, polars, limits, sailing preference, pointing angle); user alert thresholds. Today only via /docs. | TODO |
+| A2 | **Boat + user profile UI** | Modal: all boat fields incl. depth padding under keel, sailing preference, pointing angle; multi-boat with default-star; user name + alert thresholds. | **DONE** 2026-06-10 |
 | A3 | **Scheduled daily rescore + notification bell** | Cron container (or ofelia) in compose firing the existing rescore job; unread-count bell in UI reading the existing notifications API; Mailpit verifies email path. | TODO |
 | A4 | **Go-closer suggestion + max-reach ring** | Draw max_reachable_distance_nm as a circle from departure; suggest nearer saved destinations that fit the window (the spec's "shrinking circle"). | TODO |
 | A5 | **SMB in-bay wind-wave estimate** | Regime classification (bay polygon vs open Gulf) + shallow-water SMB from wind/fetch/depth; cross-check NDBC observations; stop trusting the global swell model inside the bay. | TODO |
@@ -56,6 +56,7 @@
 ## Debt register
 
 - Prototype UI replaced by B2 (do not extend the static page past Milestone A)
+- Stale-tab mitigations shipped (app-version reload banner + optimistic concurrency on route saves) — full fix remains B2
 - Marine-warning drivers ride constraint_type 'wind' (enum lacks a dedicated value)
 - 422 validation errors bypass the {data, error} envelope
 - Cold-score latency: per-waypoint conditions fetched sequentially

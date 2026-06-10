@@ -50,6 +50,7 @@
 <header>
   <h1>⛵ SailReady</h1><span class="tag">prototype — local dev</span>
   <span id="status" class="tag" style="margin-left:auto"></span>
+  <button id="profileBtn" style="width:auto; padding:6px 12px">⚙ Boat &amp; profile</button>
 </header>
 <main>
   <div id="sidebar">
@@ -122,14 +123,69 @@
   <div id="dragbar"></div>
   <div id="map"></div>
 </main>
+
+<div id="profileModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:1500; overflow:auto">
+  <div style="max-width:580px; margin:28px auto; background:var(--panel); border-radius:10px; padding:18px">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+      <h2 style="font-size:15px; margin:0">Boat &amp; Profile</h2>
+      <button id="profClose" style="width:auto; padding:4px 12px">✕</button>
+    </div>
+
+    <h2>You</h2>
+    <div class="row">
+      <div><label>Name</label><input id="uName"></div>
+      <div><label>Email</label><input id="uEmail" disabled></div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <div><label>Alert me if score drops below (%)</label><input id="uThresh" type="number" min="0" max="100"></div>
+      <div><label>Alert me on a drop of ≥ (points)</label><input id="uDrop" type="number" min="1" max="100"></div>
+    </div>
+    <button id="uSave" class="primary" style="margin-top:8px">Save profile</button>
+
+    <h2 style="margin-top:16px">Boats</h2>
+    <div class="row">
+      <select id="bSel"></select>
+      <button id="bNew" style="flex:0 0 90px">+ New</button>
+    </div>
+    <div id="bForm" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="bDefault">Set as default</button>
+      <button id="bDelete" style="background:#5c2330">Delete</button>
+      <button id="bSave" class="primary">Save boat</button>
+    </div>
+    <span class="hint" id="bHint"></span>
+  </div>
+</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+let appVersion = null;
+function checkAppVersion(resp) {
+  const v = resp.headers.get('X-App-Version');
+  if (!v) return;
+  if (appVersion === null) { appVersion = v; return; }
+  if (v !== appVersion && !window._verWarned) {
+    window._verWarned = true;
+    const b = document.createElement('div');
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#ffd166;color:#06283d;padding:9px;text-align:center;z-index:9999;font-weight:600';
+    b.innerHTML = '⚠️ SailReady was updated since this tab loaded — <a href="javascript:location.reload()" style="color:#06283d">reload now</a> before editing anything.';
+    document.body.appendChild(b);
+  }
+}
+
 const api = async (path, opts={}) => {
   const r = await fetch('/api/v1'+path, {headers:{'Content-Type':'application/json'}, ...opts});
+  checkAppVersion(r);
   const j = await r.json();
   if (j.error) throw new Error(j.error.message);
   return j.data;
 };
+
+// route saves carry a concurrency token: a stale tab's write is rejected
+// server-side instead of silently overwriting newer edits
+const putWaypoints = (wps) => api(`/trips/${selectedTrip.id}/waypoints`, {
+  method:'PUT',
+  body: JSON.stringify({waypoints: wps, expected_updated_at: selectedTrip.updated_at}),
+});
 const $ = id => document.getElementById(id);
 const status = m => { $('status').textContent = m; if(m) setTimeout(()=>{ if($('status').textContent===m) $('status').textContent=''; }, 6000); };
 
@@ -234,7 +290,7 @@ window.setLegMode = async (i, mode) => {
   const wps = wpsPayload();
   wps[i].leg_mode = mode;
   try {
-    await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints: wps})});
+    await putWaypoints(wps);
     await selectTrip(selectedTrip.id, false);
     status(`Leg ${i}→${i+1} set to ${mode} — re-score to update.`);
   } catch(e) { status('Failed: '+e.message); }
@@ -245,7 +301,7 @@ window.setDepthAck = async (i, value) => {
   const wps = wpsPayload();
   wps[i].depth_acknowledged = value;
   try {
-    await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints: wps})});
+    await putWaypoints(wps);
     await selectTrip(selectedTrip.id, false);
     status(value ? `Waypoint ${i} depth acknowledged — re-score to update.` : `Waypoint ${i} acknowledgment cleared.`);
   } catch(e) { status('Failed: '+e.message); }
@@ -255,7 +311,7 @@ async function moveWaypoint(i, lat, lon) {
   const wps = selectedTrip.waypoints.map(w => ({lat:w.lat, lon:w.lon, name:w.name, leg_mode:w.leg_mode||'auto'}));
   wps[i] = {...wps[i], lat:+lat.toFixed(5), lon:+lon.toFixed(5)};
   try {
-    await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints: wps})});
+    await putWaypoints(wps);
     // dragging the start/destination also updates the trip's own locations
     if (i === 0 || i === wps.length-1) {
       const t = selectedTrip;
@@ -464,7 +520,7 @@ $('redrawCancel').onclick = () => { redrawMode=false; $('redrawBar').style.displ
 $('redrawSave').onclick = async () => {
   if (newTripPins.length < 2) { status('Need at least 2 pins'); return; }
   try {
-    await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints:newTripPins})});
+    await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints:newTripPins, expected_updated_at:selectedTrip.updated_at})});
     redrawMode=false; $('redrawBar').style.display='none';
     await selectTrip(selectedTrip.id); status('Route updated — re-score to update.');
   } catch(e) { status('Route save failed: '+e.message); }
@@ -636,6 +692,124 @@ $('newTripForm').onsubmit = async e => {
     await loadTrips(); await selectTrip(trip.id);
     status('Trip created — hit Score.');
   } catch(err) { status('Create failed: '+err.message); }
+};
+
+// --- boat & user profile -----------------------------------------------------
+const BOAT_FIELDS = [
+  ['name','Boat name','text',true], ['make','Make','text',true],
+  ['model','Model','text',true], ['year','Year','number',false],
+  ['loa_ft','LOA (ft)','number',true], ['beam_ft','Beam (ft)','number',true],
+  ['draft_ft','Draft (ft)','number',true], ['air_draft_ft','Air draft / mast (ft)','number',true],
+  ['grounding_margin_ft','Depth padding under keel (ft)','number',false],
+  ['hull_speed_kts','Hull speed (kt, blank = derived from LOA)','number',false],
+  ['motor_speed_kts','Motor cruise (kt)','number',false],
+  ['min_upwind_angle_deg','Pointing angle (° off true wind)','number',false],
+  ['sail_speed_upwind_kts','Sail: upwind (kt)','number',false],
+  ['sail_speed_reach_kts','Sail: reach (kt)','number',false],
+  ['sail_speed_downwind_kts','Sail: downwind (kt)','number',false],
+  ['max_wind_kts','Max wind (kt)','number',false],
+  ['max_wave_ft','Max waves (ft)','number',false],
+  ['max_adverse_current_kts','Max adverse current (kt)','number',false],
+];
+let profileUser = null, profileBoats = [], profileBoatId = null;
+
+function renderBoatForm(b) {
+  $('bForm').innerHTML = BOAT_FIELDS.map(([k,label,type,req]) =>
+    `<div><label>${label}${req?' *':''}</label>
+     <input id="bf_${k}" type="${type}" step="0.1" value="${b?.[k] ?? ''}"></div>`
+  ).join('') +
+  `<div><label>Sailing preference</label>
+   <select id="bf_sailing_preference">
+     ${['sail','fastest','motor'].map(o=>`<option ${b?.sailing_preference===o?'selected':''}>${o}</option>`).join('')}
+   </select></div>`;
+  $('bHint').textContent = b?.hull_speed_is_derived
+    ? `Hull speed ${b.hull_speed_kts}kt is derived from LOA — enter your own to override.` : '';
+}
+
+function renderBoatSelect() {
+  $('bSel').innerHTML = profileBoats.map(b =>
+    `<option value="${b.id}" ${b.id===profileBoatId?'selected':''}>${b.id===profileUser?.default_boat_id?'★ ':''}${b.name} (${b.make} ${b.model})</option>`
+  ).join('') || '<option value="">— no boats yet —</option>';
+}
+
+async function openProfile() {
+  [profileUser, profileBoats] = await Promise.all([api('/users/me'), api('/boats')]);
+  $('uName').value = profileUser.name || '';
+  $('uEmail').value = profileUser.email;
+  $('uThresh').value = profileUser.alert_score_threshold;
+  $('uDrop').value = profileUser.alert_score_drop;
+  profileBoatId = profileUser.default_boat_id || profileBoats[0]?.id || null;
+  renderBoatSelect();
+  renderBoatForm(profileBoats.find(b=>b.id===profileBoatId));
+  $('profileModal').style.display = 'block';
+}
+
+function collectBoat() {
+  const out = {};
+  for (const [k,,type,req] of BOAT_FIELDS) {
+    const raw = $(`bf_${k}`).value.trim();
+    if (!raw) {
+      if (req) throw new Error(`${k.replace(/_/g,' ')} is required`);
+      out[k] = null; continue;
+    }
+    out[k] = type==='number' ? +raw : raw;
+  }
+  if (out.grounding_margin_ft == null) out.grounding_margin_ft = 1.0;
+  if (out.min_upwind_angle_deg == null) out.min_upwind_angle_deg = 45;
+  out.sailing_preference = $('bf_sailing_preference').value;
+  return out;
+}
+
+$('profileBtn').onclick = openProfile;
+$('profClose').onclick = () => { $('profileModal').style.display='none'; loadBoats(); loadTrips(); };
+$('profileModal').onclick = e => { if (e.target===$('profileModal')) $('profClose').onclick(); };
+
+$('bSel').onchange = () => { profileBoatId = $('bSel').value; renderBoatForm(profileBoats.find(b=>b.id===profileBoatId)); };
+$('bNew').onclick = () => { profileBoatId = null; renderBoatSelect(); renderBoatForm(null); $('bHint').textContent='Fill the form and Save to add this boat.'; };
+
+$('bSave').onclick = async () => {
+  try {
+    const payload = collectBoat();
+    const saved = profileBoatId
+      ? await api('/boats/'+profileBoatId, {method:'PUT', body: JSON.stringify(payload)})
+      : await api('/boats', {method:'POST', body: JSON.stringify(payload)});
+    profileBoatId = saved.id;
+    profileBoats = await api('/boats');
+    renderBoatSelect(); renderBoatForm(saved);
+    status(`Boat saved — re-score trips to apply changes.`);
+  } catch(e) { status('Save failed: '+e.message); }
+};
+
+$('bDefault').onclick = async () => {
+  if (!profileBoatId) return;
+  try {
+    profileUser = await api('/users/me', {method:'PUT', body: JSON.stringify({default_boat_id: profileBoatId})});
+    renderBoatSelect(); status('Default boat set.');
+  } catch(e) { status(e.message); }
+};
+
+$('bDelete').onclick = async () => {
+  if (!profileBoatId) return;
+  const b = profileBoats.find(x=>x.id===profileBoatId);
+  if (!confirm(`Delete "${b?.name}"? Trips using it keep their data.`)) return;
+  try {
+    await api('/boats/'+profileBoatId, {method:'DELETE'});
+    profileBoats = await api('/boats');
+    profileBoatId = profileBoats[0]?.id || null;
+    renderBoatSelect(); renderBoatForm(profileBoats.find(x=>x.id===profileBoatId));
+    status('Boat deleted.');
+  } catch(e) { status('Delete failed — boats referenced by trips cannot be removed.'); }
+};
+
+$('uSave').onclick = async () => {
+  try {
+    profileUser = await api('/users/me', {method:'PUT', body: JSON.stringify({
+      name: $('uName').value || null,
+      alert_score_threshold: +$('uThresh').value,
+      alert_score_drop: +$('uDrop').value,
+    })});
+    status('Profile saved.');
+  } catch(e) { status('Save failed: '+e.message); }
 };
 
 // --- resizable sidebar ---
