@@ -76,7 +76,8 @@ services:
       OAUTH2_PROXY_COOKIE_SECURE: "true"
       OAUTH2_PROXY_REVERSE_PROXY: "true"
       OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
-      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "GET=^/healthz$"
+      # public: health check + the landing page (it inlines all its assets)
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "GET=^/healthz$,GET=^/$"
     volumes:
       - ./authenticated-emails.txt:/etc/oauth2/emails.txt:ro
     depends_on:

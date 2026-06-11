@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -91,9 +91,11 @@ async def http_exception_envelope(
     )
 
 
+# Public landing page — the auth proxy skips ^/$ so signed-out visitors see
+# this instead of an immediate Google bounce. Everything it needs is inline.
 @app.get("/")
-async def root() -> RedirectResponse:
-    return RedirectResponse(url="/app/")
+async def root() -> FileResponse:
+    return FileResponse(STATIC_DIR / "landing.html")
 
 
 @app.get("/api")
