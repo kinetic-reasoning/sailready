@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SailReady — prototype</title>
+<title>SailReady — Plan the sail. Sail the plan.</title>
+<link rel="icon" type="image/svg+xml" href="/app/logo.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root { --bg:#0d1b2a; --panel:#1b263b; --text:#e0e1dd; --muted:#9fb0c3; --accent:#4cc9f0; }
@@ -57,7 +58,13 @@
 </head>
 <body>
 <header>
-  <h1>⛵ SailReady</h1><span class="tag">prototype — local dev</span>
+  <svg width="26" height="26" viewBox="0 0 64 64" aria-hidden="true">
+    <polygon points="12,46 27,20 27,46" fill="#52d273"/>
+    <polygon points="31,46 31,10 52,46" fill="#4cc9f0"/>
+    <path d="M8 53 q8 -5 16 0 t16 0 t16 0" stroke="#3a506b" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+  </svg>
+  <h1><span style="font-weight:300">sail</span>ready</h1>
+  <span class="tag" style="font-style:italic">Plan the sail. Sail the plan.</span>
   <span id="status" class="tag" style="margin-left:auto"></span>
   <button id="bellBtn" class="icon" style="position:relative">🔔<span id="bellCount" style="display:none; position:absolute; top:-4px; right:-4px; background:#ff5d5d; color:#fff; border-radius:9px; font-size:10px; padding:1px 5px"></span></button>
   <button id="profileBtn" class="icon">⚙ Settings</button>
