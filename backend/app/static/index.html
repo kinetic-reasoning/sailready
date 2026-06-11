@@ -167,8 +167,11 @@
 <div id="profileModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:1500; overflow:auto">
   <div style="max-width:580px; margin:28px auto; background:var(--panel); border-radius:10px; padding:18px">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
-      <h2 style="font-size:15px; margin:0">Boat &amp; Profile</h2>
-      <button id="profClose" class="icon">✕</button>
+      <h2 style="font-size:15px; margin:0">Settings</h2>
+      <div style="display:flex; gap:8px">
+        <button id="signOut" class="icon" style="font-size:12px" onclick="location.href='/oauth2/sign_out?rd=%2F'">Sign out</button>
+        <button id="profClose" class="icon">✕</button>
+      </div>
     </div>
 
     <h2>You</h2>
