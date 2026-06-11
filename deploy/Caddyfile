@@ -1,5 +1,17 @@
 {$DOMAIN} {
 	encode gzip
+
+	header {
+		# force HTTPS for a year, including subdomains
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# geolocation allowed for the app itself (find-me / co-pilot), nothing else
+		Permissions-Policy "geolocation=(self), camera=(), microphone=(), payment=()"
+		-Server
+	}
+
 	reverse_proxy oauth2-proxy:4180
 }
 
