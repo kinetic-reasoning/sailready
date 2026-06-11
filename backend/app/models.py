@@ -52,6 +52,9 @@ class User(Base):
     default_boat_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     alert_score_threshold: Mapped[int] = mapped_column(server_default=text("60"))
     alert_score_drop: Mapped[int] = mapped_column(server_default=text("20"))
+    home_port_name: Mapped[str | None]
+    home_port_lat: Mapped[Decimal | None]
+    home_port_lon: Mapped[Decimal | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

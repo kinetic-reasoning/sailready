@@ -11,6 +11,7 @@ from app.api import (
     charts,
     conditions,
     feedback,
+    geocode,
     notifications,
     routes,
     scores,
@@ -68,6 +69,7 @@ app.include_router(feedback.router, prefix=API_PREFIX)
 app.include_router(notifications.router, prefix=API_PREFIX)
 app.include_router(conditions.router, prefix=API_PREFIX)
 app.include_router(charts.router, prefix=API_PREFIX)
+app.include_router(geocode.router, prefix=API_PREFIX)
 
 # Prototype map UI (the real React PWA arrives in build step 5)
 app.mount("/app", StaticFiles(directory=STATIC_DIR, html=True), name="app")

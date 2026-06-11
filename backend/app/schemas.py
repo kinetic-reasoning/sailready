@@ -29,6 +29,9 @@ class UserOut(BaseModel):
     default_boat_id: uuid.UUID | None
     alert_score_threshold: int
     alert_score_drop: int
+    home_port_name: str | None
+    home_port_lat: float | None
+    home_port_lon: float | None
     created_at: datetime
 
 
@@ -37,6 +40,9 @@ class UserUpdate(BaseModel):
     default_boat_id: uuid.UUID | None = None
     alert_score_threshold: int | None = Field(default=None, ge=0, le=100)
     alert_score_drop: int | None = Field(default=None, ge=1, le=100)
+    home_port_name: str | None = None
+    home_port_lat: float | None = Field(default=None, ge=-90, le=90)
+    home_port_lon: float | None = Field(default=None, ge=-180, le=180)
 
 
 # --- boats -------------------------------------------------------------------
