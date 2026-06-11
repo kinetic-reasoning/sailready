@@ -1,0 +1,104 @@
+# SailReady POC deploy — single VM, docker compose.
+# Chain: internet -> Caddy (TLS) -> oauth2-proxy (Google sign-in + allowlist) -> API
+# Only Caddy publishes ports. DB, API, mailpit are internal-network only.
+#
+# Usage (from the deploy/ directory):
+#   cp .env.example .env       # fill in domain + Google OAuth credentials
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+#   ./get-enc.sh && docker compose -f docker-compose.prod.yml run --rm api python -m app.charts.ingest_enc data/enc
+#   docker compose -f docker-compose.prod.yml run --rm api python -m app.charts.warm_tiles
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: sailready
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sailready
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sailready -d sailready"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: ../backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sailready_app:${APP_DB_PASSWORD}@db:5432/sailready
+      DATABASE_URL_ADMIN: postgresql+asyncpg://sailready:${POSTGRES_PASSWORD}@db:5432/sailready
+      AUTH_MODE: proxy
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  watcher:
+    build: ../backend
+    command: python -m app.jobs.watch
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sailready_app:${APP_DB_PASSWORD}@db:5432/sailready
+      DATABASE_URL_ADMIN: postgresql+asyncpg://sailready:${POSTGRES_PASSWORD}@db:5432/sailready
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit
+    restart: unless-stopped
+    # no published ports — view via: ssh -L 8025:localhost:8025 then
+    # docker compose ... exec mailpit? simplest: ssh -L 8025:<mailpit-ip>:8025
+    # or temporarily publish 127.0.0.1:8025:8025 here
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    environment:
+      OAUTH2_PROXY_PROVIDER: google
+      OAUTH2_PROXY_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      OAUTH2_PROXY_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${COOKIE_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: https://${DOMAIN}/oauth2/callback
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_AUTHENTICATED_EMAILS_FILE: /etc/oauth2/emails.txt
+      OAUTH2_PROXY_UPSTREAMS: http://api:8000
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_PASS_USER_HEADERS: "true"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "GET=^/healthz$"
+    volumes:
+      - ./authenticated-emails.txt:/etc/oauth2/emails.txt:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - oauth2-proxy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

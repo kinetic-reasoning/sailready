@@ -32,6 +32,7 @@
 
 | # | Item | Notes |
 |---|---|---|
+| C0 | **POC single-VM deploy** | PREPARED 2026-06-10: deploy/ has prod compose (Caddy auto-TLS + oauth2-proxy Google sign-in + email allowlist + AUTH_MODE=proxy), DEPLOY.md runbook, ENC fetch script. Satisfies B1 (HTTPS) for the public host — GPS works there. Remaining: VM + DNS + Google OAuth client (user-side). |
 | C1 | **Cognito + Google SSO, invite-only** | No self-signup. JWT validation replaces AUTH_MODE=dev (mode switch + cognito_id column already in place). Apple Sign In follows when App Store matters. |
 | C2 | **AWS deploy** | Build sequence step 6: Terraform/Terragrunt, RDS+PostGIS, Lambda container images, S3+CloudFront, SES, EventBridge rescore. |
 | C3 | **Security hardening pass** | Secrets Manager, security headers/CSP, per-user rate limiting, CORS lockdown, RDS backups, auth audit log, tile-endpoint rate limit. |
