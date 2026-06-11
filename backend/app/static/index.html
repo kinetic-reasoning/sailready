@@ -97,6 +97,7 @@
 
     <div id="scorePanel" style="display:none">
       <h2>Go / No-Go</h2>
+      <div id="verdict" style="text-align:center; font-weight:800; font-size:21px; margin-top:2px"></div>
       <div id="scoreBig" class="score-big">—</div>
       <button id="scoreBtn" class="primary">🔄 Check conditions now</button>
       <div class="hint" id="watchHint" style="margin-top:4px"></div>
@@ -236,6 +237,14 @@ let newTripPins = [];
 let newTripMode = false;
 
 const scoreClass = s => s>=80?'g':s>=60?'y':s>=40?'o':'r';
+// the verdict carries the why: any hard violation = dock, whatever the number
+const verdictFor = (s, feasible) => (feasible===false || s<40) ? '⚓ Stay at the dock'
+  : s<60 ? '🌊 Sporty' : s<80 ? '👁 On watch' : '⛵ Fair winds';
+function renderVerdict(s, feasible) {
+  if (s == null) { $('verdict').textContent=''; return; }
+  $('verdict').textContent = verdictFor(s, feasible);
+  $('verdict').className = scoreClass(feasible===false ? Math.min(s,39) : s);
+}
 const fmtT = iso => new Date(iso).toLocaleString([], {weekday:'short', hour:'2-digit', minute:'2-digit'});
 
 async function loadBoats() {
@@ -556,6 +565,7 @@ function renderScoreSummary() {
   const s = selectedTrip.current_score;
   $('scoreBig').textContent = s==null?'—':s+'%';
   $('scoreBig').className = 'score-big '+(s==null?'':scoreClass(s));
+  renderVerdict(s, undefined);
   $('scoreMeta').innerHTML = ''; $('drivers').innerHTML=''; $('legs').innerHTML=''; $('suggestions').innerHTML=''; $('measured').innerHTML='';
   $('scoreBtn').disabled = !selectedTrip.waypoints.length;
   if (!selectedTrip.waypoints.length)
@@ -623,6 +633,8 @@ function renderScore(r) {
   $('scoreBig').textContent = r.score+'%';
   $('scoreBig').className = 'score-big '+scoreClass(r.score) + (stale ? '' : '');
   $('scoreBig').style.opacity = stale ? .45 : 1;
+  renderVerdict(r.score, r.feasible);
+  $('verdict').style.opacity = stale ? .45 : 1;
   const staleBanner = stale
     ? `<div class="stale-banner">⚠️ The route or trip details changed AFTER this score was computed — these results (including all drivers) are outdated. Hit <b>Score this trip now</b>.</div>`
     : '';
@@ -671,6 +683,7 @@ $('scoreBtn').onclick = async () => {
   $('scoreBtn').disabled = true; $('scoreBtn').textContent = 'Checking…';
   $('scoreBig').innerHTML = '<div class="spinner"></div>';
   $('scoreBig').style.opacity = 1;
+  $('verdict').textContent = '';
   let phase = 0;
   $('watchHint').textContent = CHECK_PHASES[0];
   const ticker = setInterval(() => {
