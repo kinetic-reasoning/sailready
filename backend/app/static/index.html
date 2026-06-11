@@ -42,6 +42,8 @@
   button.attn { outline:2px solid #ffd166; animation:pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { outline-color:transparent; } }
   .map-legend { background:rgba(13,27,42,.85); color:var(--text); padding:8px 10px; border-radius:6px; font-size:11.5px; line-height:1.7; }
+  .spinner { width:30px; height:30px; border:3px solid #2b3f5c; border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; margin:10px auto; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   #newTripForm { display:none; flex-direction:column; gap:8px; }
   label { font-size:12px; color:var(--muted); }
 </style>
@@ -83,8 +85,8 @@
         <div><label>Time</label><input id="tRetTime" type="time"></div>
       </div>
       <div class="row">
-        <div style="flex:1.4"><label>Time at destination</label><input id="tStay" type="number" value="2" min="0" step="0.5"></div>
-        <div><label>&nbsp;</label><select id="tStayUnit"><option>hours</option><option>days</option></select></div>
+        <div><label>Stay: days</label><input id="tStayD" type="number" value="0" min="0" step="1"></div>
+        <div><label>+ hours</label><input id="tStayH" type="number" value="2" min="0" step="0.5"></div>
       </div>
       <div class="row">
         <button type="button" id="tCancel">Cancel</button>
@@ -135,8 +137,8 @@
             <div><label>Time</label><input id="eRetTime" type="time"></div>
           </div>
           <div class="row">
-            <div style="flex:1.4"><label>Time at destination</label><input id="eStay" type="number" min="0" step="0.5"></div>
-            <div><label>&nbsp;</label><select id="eStayUnit"><option>hours</option><option>days</option></select></div>
+            <div><label>Stay: days</label><input id="eStayD" type="number" min="0" step="1"></div>
+            <div><label>+ hours</label><input id="eStayH" type="number" min="0" step="0.5"></div>
           </div>
           <button type="submit" class="primary">Save changes</button>
         </form>
@@ -156,14 +158,14 @@
 
     <h2>You</h2>
     <div class="row">
-      <div><label>Name</label><input id="uName"></div>
+      <div><label>Name</label><input id="uName" disabled></div>
       <div><label>Email</label><input id="uEmail" disabled></div>
     </div>
+    <span class="hint">Name and email come from your sign-in account.</span>
     <div class="row" style="margin-top:6px">
       <div><label>Alert me if score drops below (%)</label><input id="uThresh" type="number" min="0" max="100"></div>
       <div><label>Alert me on a drop of ≥ (points)</label><input id="uDrop" type="number" min="1" max="100"></div>
     </div>
-    <button id="uSave" class="primary" style="margin-top:8px">Save profile</button>
 
     <h2 style="margin-top:16px">Boats</h2>
     <div class="row">
@@ -174,7 +176,7 @@
     <div class="row" style="margin-top:10px">
       <button id="bDefault">Set as default</button>
       <button id="bDelete" style="background:#5c2330">Delete</button>
-      <button id="bSave" class="primary">Save boat</button>
+      <button id="bSave" class="primary">Save &amp; close</button>
     </div>
     <span class="hint" id="bHint"></span>
   </div>
@@ -514,8 +516,8 @@ $('editToggle').onclick = () => {
     const dep = new Date(selectedTrip.departure_time), ret = new Date(selectedTrip.return_by_time);
     $('eDepDate').value = localDateStr(dep); $('eDepTime').value = localTimeStr(dep);
     $('eRetDate').value = localDateStr(ret); $('eRetTime').value = localTimeStr(ret);
-    const stay = hoursToStay(selectedTrip.time_at_destination_hrs);
-    $('eStay').value = stay.val; $('eStayUnit').value = stay.unit;
+    const stay = splitStay(selectedTrip.time_at_destination_hrs);
+    $('eStayD').value = stay.days; $('eStayH').value = stay.hours;
   } else f.style.display='none';
 };
 
@@ -529,7 +531,7 @@ $('editForm').onsubmit = async e => {
       destination_location: selectedTrip.destination_location,
       departure_time: new Date(`${$('eDepDate').value}T${$('eDepTime').value}`).toISOString(),
       return_by_time: new Date(`${$('eRetDate').value}T${$('eRetTime').value}`).toISOString(),
-      time_at_destination_hrs: stayToHours($('eStay').value, $('eStayUnit').value),
+      time_at_destination_hrs: stayHours('eStayD','eStayH'),
     })});
     await selectTrip(selectedTrip.id); status('Saved — conditions will be re-checked.');
   } catch(err) { status('Save failed: '+err.message); }
@@ -653,17 +655,35 @@ function renderLegs(r) {
         `<td>${deg(l.course_deg)}</td><td>${steer}</td><td>${l.distance_nm}</td><td>${wind}</td><td>${angle}${pos}</td><td>${num(l.wave_height_ft,"'")}</td>`+
         `<td>${num(l.rain_prob_pct,'%')}</td><td>${cur}</td><td>${l.boat_speed_kts}</td><td><b>${l.sog_kts}</b></td><td>${modeIcon}</td></tr>`;
     }).join('')+'</table>'+
-    '<span class="hint">Crs = rhumb course (true). Steer = crab-corrected; beating (⛵⇄) shows tack headings, Boat = VMG. ∠ = wind angle off bow (S = starboard, P = port) + point of sail. Cur± = current along course (+ fair / − foul, * interpolated). Click a waypoint on the map to force motor/sail for its leg.</span>';
+    '<span class="hint">Crs = straight-line course to the next point. Steer = the heading to actually hold — adjusted so the current doesn\'t push you off the line. When you can\'t sail straight upwind (⛵⇄) we show both zigzag headings, and Boat = your real progress toward the mark. ∠ = where the wind hits the boat (S = right side, P = left) and what kind of sailing that is. Cur± = current helping (+) or fighting (−) you; * = estimated between tide-station readings. Click a waypoint on the map to force motor or sail for its leg.</span>';
 }
+
+const CHECK_PHASES = [
+  'Fetching wind & wave forecasts…',
+  'Pulling tide & current predictions…',
+  'Reading charted depths along your route…',
+  'Simulating the trip hour by hour…',
+  'Checking the return leg at return-time conditions…',
+];
 
 $('scoreBtn').onclick = async () => {
   if (!selectedTrip) return;
-  $('scoreBtn').disabled = true; $('scoreBtn').textContent = 'Checking forecasts…';
+  $('scoreBtn').disabled = true; $('scoreBtn').textContent = 'Checking…';
+  $('scoreBig').innerHTML = '<div class="spinner"></div>';
+  $('scoreBig').style.opacity = 1;
+  let phase = 0;
+  $('watchHint').textContent = CHECK_PHASES[0];
+  const ticker = setInterval(() => {
+    phase = Math.min(phase + 1, CHECK_PHASES.length - 1);
+    $('watchHint').textContent = CHECK_PHASES[phase];
+  }, 1500);
   try {
     const r = await api(`/trips/${selectedTrip.id}/score`, {method:'POST'});
     selectedTrip = await api('/trips/'+selectedTrip.id); // fresh updated_at for staleness math
-    renderScore(r); loadTrips(); renderWatchHint();
-  } catch(e) { status('Check failed: '+e.message); }
+    renderScore(r); loadTrips();
+  } catch(e) { status('Check failed: '+e.message); renderScoreSummary(); }
+  clearInterval(ticker);
+  renderWatchHint();
   $('scoreBtn').disabled = false; $('scoreBtn').textContent = '🔄 Check conditions now';
 };
 
@@ -680,8 +700,8 @@ function renderWatchHint() {
 const pad2 = n => String(n).padStart(2,'0');
 const localDateStr = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 const localTimeStr = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-const stayToHours = (val, unit) => +val * (unit==='days' ? 24 : 1);
-const hoursToStay = h => (h >= 24 && h % 24 === 0) ? {val: h/24, unit:'days'} : {val: h, unit:'hours'};
+const stayHours = (daysEl, hoursEl) => (+$(daysEl).value || 0) * 24 + (+$(hoursEl).value || 0);
+const splitStay = h => ({days: Math.floor(h/24), hours: Math.round((h - Math.floor(h/24)*24)*10)/10});
 
 $('newTripBtn').onclick = async () => {
   newTripMode = true; newTripPins = []; redrawMode = false;
@@ -726,7 +746,7 @@ $('newTripForm').onsubmit = async e => {
       destination_location: newTripPins[newTripPins.length-1],
       departure_time: dep.toISOString(),
       return_by_time: ret.toISOString(),
-      time_at_destination_hrs: stayToHours($('tStay').value, $('tStayUnit').value),
+      time_at_destination_hrs: stayHours('tStayD','tStayH'),
     })});
     await api(`/trips/${trip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints:newTripPins})});
     newTripMode=false; newTripPins=[]; $('newTripForm').style.display='none';
@@ -810,14 +830,22 @@ $('bNew').onclick = () => { profileBoatId = null; renderBoatSelect(); renderBoat
 
 $('bSave').onclick = async () => {
   try {
-    const payload = collectBoat();
-    const saved = profileBoatId
-      ? await api('/boats/'+profileBoatId, {method:'PUT', body: JSON.stringify(payload)})
-      : await api('/boats', {method:'POST', body: JSON.stringify(payload)});
-    profileBoatId = saved.id;
-    profileBoats = await api('/boats');
-    renderBoatSelect(); renderBoatForm(saved);
-    status(`Boat saved — re-score trips to apply changes.`);
+    // one save: user preferences + the boat being edited, then close
+    profileUser = await api('/users/me', {method:'PUT', body: JSON.stringify({
+      alert_score_threshold: +$('uThresh').value,
+      alert_score_drop: +$('uDrop').value,
+    })});
+    const hasBoatInput = BOAT_FIELDS.some(([k]) => $(`bf_${k}`)?.value.trim());
+    if (profileBoatId || hasBoatInput) {
+      const payload = collectBoat();
+      const saved = profileBoatId
+        ? await api('/boats/'+profileBoatId, {method:'PUT', body: JSON.stringify(payload)})
+        : await api('/boats', {method:'POST', body: JSON.stringify(payload)});
+      profileBoatId = saved.id;
+    }
+    $('profileModal').style.display = 'none';
+    loadBoats(); loadTrips();
+    status('Settings saved — boat changes apply on the next conditions check.');
   } catch(e) { status('Save failed: '+e.message); }
 };
 
@@ -840,17 +868,6 @@ $('bDelete').onclick = async () => {
     renderBoatSelect(); renderBoatForm(profileBoats.find(x=>x.id===profileBoatId));
     status('Boat deleted.');
   } catch(e) { status('Delete failed — boats referenced by trips cannot be removed.'); }
-};
-
-$('uSave').onclick = async () => {
-  try {
-    profileUser = await api('/users/me', {method:'PUT', body: JSON.stringify({
-      name: $('uName').value || null,
-      alert_score_threshold: +$('uThresh').value,
-      alert_score_drop: +$('uDrop').value,
-    })});
-    status('Profile saved.');
-  } catch(e) { status('Save failed: '+e.message); }
 };
 
 // --- notification bell --------------------------------------------------------
