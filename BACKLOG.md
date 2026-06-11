@@ -11,7 +11,7 @@
 |---|---|---|---|
 | A1 | **Grounding check in scoring** | Charted depth + tide-at-arrival vs draft + 1ft margin; land/unsurveyed/unknown-depth-hazard flags; subordinate tide stations (hilo-only, e.g. Shell Point 8726468) cosine-interpolated and flagged. Caught the land waypoint: trip 100% -> 5%. | **DONE** 2026-06-10 |
 | A2 | **Boat + user profile UI** | Modal: all boat fields incl. depth padding under keel, sailing preference, pointing angle; multi-boat with default-star; user name + alert thresholds. | **DONE** 2026-06-10 |
-| A3 | **Scheduled daily rescore + notification bell** | Cron container (or ofelia) in compose firing the existing rescore job; unread-count bell in UI reading the existing notifications API; Mailpit verifies email path. | TODO |
+| A3 | **Trip watcher + notification bell** | Continuous watcher service (compose): re-checks every 3h within 48h of departure, 6h within a week, daily beyond; cache TTLs keep upstream APIs polite. Bell with unread count, click-through to trip, mark-all-read. "Score" reframed as "Check conditions now" + watching hint. | **DONE** 2026-06-10 |
 | A4 | **Go-closer suggestion + max-reach ring** | Draw max_reachable_distance_nm as a circle from departure; suggest nearer saved destinations that fit the window (the spec's "shrinking circle"). | TODO |
 | A5 | **SMB in-bay wind-wave estimate** | Regime classification (bay polygon vs open Gulf) + shallow-water SMB from wind/fetch/depth; cross-check NDBC observations; stop trusting the global swell model inside the bay. | TODO |
 | A6 | **Saved routes + feedback UI** | Both APIs exist; surface them (save current route, instantiate trip from template, post-trip thumbs + actuals form). | TODO |

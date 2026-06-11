@@ -50,8 +50,16 @@
 <header>
   <h1>⛵ SailReady</h1><span class="tag">prototype — local dev</span>
   <span id="status" class="tag" style="margin-left:auto"></span>
-  <button id="profileBtn" style="width:auto; padding:6px 12px">⚙ Boat &amp; profile</button>
+  <button id="bellBtn" style="width:auto; padding:6px 10px; position:relative">🔔<span id="bellCount" style="display:none; position:absolute; top:-4px; right:-4px; background:#ff5d5d; color:#fff; border-radius:9px; font-size:10px; padding:1px 5px"></span></button>
+  <button id="profileBtn" style="width:auto; padding:6px 12px">⚙ Settings</button>
 </header>
+<div id="bellPanel" style="display:none; position:absolute; top:48px; right:12px; width:340px; max-height:60vh; overflow:auto; background:var(--panel); border:1px solid #3a506b; border-radius:8px; padding:10px; z-index:1400">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
+    <h2 style="margin:0">Alerts</h2>
+    <button id="bellReadAll" style="width:auto; padding:3px 8px; font-size:11px">mark all read</button>
+  </div>
+  <div id="bellList"></div>
+</div>
 <main>
   <div id="sidebar">
     <div>
@@ -67,10 +75,17 @@
       <label>Name</label><input id="tName" placeholder="Egmont Key Day Sail">
       <label>Boat</label><select id="tBoat"></select>
       <div class="row">
-        <div><label>Departure</label><input id="tDep" type="datetime-local"></div>
-        <div><label>Return by</label><input id="tRet" type="datetime-local"></div>
+        <div style="flex:1.4"><label>Departure date</label><input id="tDepDate" type="date"></div>
+        <div><label>Time</label><input id="tDepTime" type="time"></div>
       </div>
-      <label>Hours at destination</label><input id="tStay" type="number" value="2" min="0" step="0.5">
+      <div class="row">
+        <div style="flex:1.4"><label>Return-by date</label><input id="tRetDate" type="date"></div>
+        <div><label>Time</label><input id="tRetTime" type="time"></div>
+      </div>
+      <div class="row">
+        <div style="flex:1.4"><label>Time at destination</label><input id="tStay" type="number" value="2" min="0" step="0.5"></div>
+        <div><label>&nbsp;</label><select id="tStayUnit"><option>hours</option><option>days</option></select></div>
+      </div>
       <div class="row">
         <button type="button" id="tCancel">Cancel</button>
         <button type="button" id="tUndo">Undo pin</button>
@@ -81,7 +96,8 @@
     <div id="scorePanel" style="display:none">
       <h2>Go / No-Go</h2>
       <div id="scoreBig" class="score-big">—</div>
-      <button id="scoreBtn" class="primary">Score this trip now</button>
+      <button id="scoreBtn" class="primary">🔄 Check conditions now</button>
+      <div class="hint" id="watchHint" style="margin-top:4px"></div>
       <div id="legViewBar" class="row" style="margin-top:6px; display:none">
         <button data-view="outbound" class="viewbtn">▸ Outbound</button>
         <button data-view="return" class="viewbtn">◂ Return</button>
@@ -111,10 +127,17 @@
         <form id="editForm" style="display:none; margin-top:6px; flex-direction:column; gap:6px">
           <label>Name</label><input id="eName">
           <div class="row">
-            <div><label>Departure</label><input id="eDep" type="datetime-local"></div>
-            <div><label>Return by</label><input id="eRet" type="datetime-local"></div>
+            <div style="flex:1.4"><label>Departure date</label><input id="eDepDate" type="date"></div>
+            <div><label>Time</label><input id="eDepTime" type="time"></div>
           </div>
-          <label>Hours at destination</label><input id="eStay" type="number" min="0" step="0.5">
+          <div class="row">
+            <div style="flex:1.4"><label>Return-by date</label><input id="eRetDate" type="date"></div>
+            <div><label>Time</label><input id="eRetTime" type="time"></div>
+          </div>
+          <div class="row">
+            <div style="flex:1.4"><label>Time at destination</label><input id="eStay" type="number" min="0" step="0.5"></div>
+            <div><label>&nbsp;</label><select id="eStayUnit"><option>hours</option><option>days</option></select></div>
+          </div>
           <button type="submit" class="primary">Save changes</button>
         </form>
       </div>
@@ -449,6 +472,7 @@ async function selectTrip(id, fit = true) {
   drawRoute(selectedTrip.waypoints, fit);
   renderScoreSummary();
   renderManage();
+  renderWatchHint();
   loadTrips();
   // reload the persisted report so clicking away never loses the detail
   try {
@@ -482,16 +506,16 @@ $('statusBtn').onclick = async () => {
   catch(e) { status(e.message); }
 };
 
-const isoToLocal = iso => { const d=new Date(iso); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
-
 $('editToggle').onclick = () => {
   const f = $('editForm');
   if (f.style.display==='none') {
     f.style.display='flex';
     $('eName').value = selectedTrip.name||'';
-    $('eDep').value = isoToLocal(selectedTrip.departure_time);
-    $('eRet').value = isoToLocal(selectedTrip.return_by_time);
-    $('eStay').value = selectedTrip.time_at_destination_hrs;
+    const dep = new Date(selectedTrip.departure_time), ret = new Date(selectedTrip.return_by_time);
+    $('eDepDate').value = localDateStr(dep); $('eDepTime').value = localTimeStr(dep);
+    $('eRetDate').value = localDateStr(ret); $('eRetTime').value = localTimeStr(ret);
+    const stay = hoursToStay(selectedTrip.time_at_destination_hrs);
+    $('eStay').value = stay.val; $('eStayUnit').value = stay.unit;
   } else f.style.display='none';
 };
 
@@ -503,11 +527,11 @@ $('editForm').onsubmit = async e => {
       name: $('eName').value || null,
       departure_location: selectedTrip.departure_location,
       destination_location: selectedTrip.destination_location,
-      departure_time: new Date($('eDep').value).toISOString(),
-      return_by_time: new Date($('eRet').value).toISOString(),
-      time_at_destination_hrs: +$('eStay').value,
+      departure_time: new Date(`${$('eDepDate').value}T${$('eDepTime').value}`).toISOString(),
+      return_by_time: new Date(`${$('eRetDate').value}T${$('eRetTime').value}`).toISOString(),
+      time_at_destination_hrs: stayToHours($('eStay').value, $('eStayUnit').value),
     })});
-    await selectTrip(selectedTrip.id); status('Saved — re-score to update.');
+    await selectTrip(selectedTrip.id); status('Saved — conditions will be re-checked.');
   } catch(err) { status('Save failed: '+err.message); }
 };
 
@@ -634,23 +658,39 @@ function renderLegs(r) {
 
 $('scoreBtn').onclick = async () => {
   if (!selectedTrip) return;
-  $('scoreBtn').disabled = true; $('scoreBtn').textContent = 'Scoring (fetching forecasts)…';
+  $('scoreBtn').disabled = true; $('scoreBtn').textContent = 'Checking forecasts…';
   try {
     const r = await api(`/trips/${selectedTrip.id}/score`, {method:'POST'});
-    renderScore(r); loadTrips();
-  } catch(e) { status('Score failed: '+e.message); }
-  $('scoreBtn').disabled = false; $('scoreBtn').textContent = 'Score this trip now';
+    selectedTrip = await api('/trips/'+selectedTrip.id); // fresh updated_at for staleness math
+    renderScore(r); loadTrips(); renderWatchHint();
+  } catch(e) { status('Check failed: '+e.message); }
+  $('scoreBtn').disabled = false; $('scoreBtn').textContent = '🔄 Check conditions now';
 };
 
+function renderWatchHint() {
+  if (!selectedTrip || !['planning','active'].includes(selectedTrip.status) || selectedTrip.current_score == null) {
+    $('watchHint').textContent = ''; return;
+  }
+  const hrs = (new Date(selectedTrip.departure_time) - new Date()) / 36e5;
+  const cadence = hrs <= 48 ? 'every ~3h' : hrs <= 168 ? 'every ~6h' : 'daily';
+  $('watchHint').innerHTML = `👁 <b>Watching this trip</b> — conditions re-checked ${cadence} (more often as departure nears). You'll get an alert if the outlook changes.`;
+}
+
 // --- new trip flow ---
+const pad2 = n => String(n).padStart(2,'0');
+const localDateStr = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const localTimeStr = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const stayToHours = (val, unit) => +val * (unit==='days' ? 24 : 1);
+const hoursToStay = h => (h >= 24 && h % 24 === 0) ? {val: h/24, unit:'days'} : {val: h, unit:'hours'};
+
 $('newTripBtn').onclick = async () => {
   newTripMode = true; newTripPins = []; redrawMode = false;
   routeLayer.clearLayers(); scoreLayer.clearLayers(); // blank canvas — no leftover trip
   selectedTrip = null; $('scorePanel').style.display='none';
   $('newTripForm').style.display='flex'; $('wpCount').textContent='0';
-  const now = new Date(); now.setDate(now.getDate()+1); now.setHours(9,0,0,0);
-  $('tDep').value = now.toISOString().slice(0,16);
-  now.setHours(17); $('tRet').value = now.toISOString().slice(0,16);
+  const d = new Date(); d.setDate(d.getDate()+1);
+  $('tDepDate').value = localDateStr(d); $('tDepTime').value = '09:00';
+  $('tRetDate').value = localDateStr(d); $('tRetTime').value = '17:00';
   await loadBoats();
 };
 $('tCancel').onclick = () => { newTripMode=false; newTripPins=[]; routeLayer.clearLayers(); scoreLayer.clearLayers(); $('newTripForm').style.display='none'; };
@@ -677,7 +717,8 @@ $('newTripForm').onsubmit = async e => {
   e.preventDefault();
   if (newTripPins.length < 2) { status('Drop at least 2 pins (start + destination)'); return; }
   try {
-    const dep = new Date($('tDep').value), ret = new Date($('tRet').value);
+    const dep = new Date(`${$('tDepDate').value}T${$('tDepTime').value}`);
+    const ret = new Date(`${$('tRetDate').value}T${$('tRetTime').value}`);
     const trip = await api('/trips', {method:'POST', body: JSON.stringify({
       boat_id: $('tBoat').value,
       name: $('tName').value || null,
@@ -685,7 +726,7 @@ $('newTripForm').onsubmit = async e => {
       destination_location: newTripPins[newTripPins.length-1],
       departure_time: dep.toISOString(),
       return_by_time: ret.toISOString(),
-      time_at_destination_hrs: +$('tStay').value,
+      time_at_destination_hrs: stayToHours($('tStay').value, $('tStayUnit').value),
     })});
     await api(`/trips/${trip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints:newTripPins})});
     newTripMode=false; newTripPins=[]; $('newTripForm').style.display='none';
@@ -811,6 +852,33 @@ $('uSave').onclick = async () => {
     status('Profile saved.');
   } catch(e) { status('Save failed: '+e.message); }
 };
+
+// --- notification bell --------------------------------------------------------
+async function refreshBell() {
+  try {
+    const ns = await api('/notifications');
+    const unread = ns.filter(n => !n.read_at);
+    $('bellCount').textContent = unread.length;
+    $('bellCount').style.display = unread.length ? '' : 'none';
+    $('bellList').innerHTML = ns.slice(0, 30).map(n =>
+      `<div class="driver ${n.read_at?'ok':'warning'}" style="cursor:pointer" data-id="${n.id}" data-trip="${n.trip_id||''}">
+        <b>${n.subject}</b><br><small class="hint">${fmtT(n.sent_at)}</small></div>`
+    ).join('') || '<span class="hint">No alerts yet — the watcher posts here when a trip\'s outlook changes.</span>';
+    $('bellList').querySelectorAll('[data-id]').forEach(el => el.onclick = async () => {
+      await api(`/notifications/${el.dataset.id}/read`, {method:'PUT'});
+      if (el.dataset.trip) { $('bellPanel').style.display='none'; selectTrip(el.dataset.trip); }
+      refreshBell();
+    });
+  } catch(e) { /* not signed in / transient */ }
+}
+$('bellBtn').onclick = () => {
+  const p = $('bellPanel');
+  p.style.display = p.style.display==='none' ? 'block' : 'none';
+  if (p.style.display==='block') refreshBell();
+};
+$('bellReadAll').onclick = async () => { await api('/notifications/read-all', {method:'PUT'}); refreshBell(); };
+setInterval(refreshBell, 60_000);
+refreshBell();
 
 // --- resizable sidebar ---
 let dragging = false;

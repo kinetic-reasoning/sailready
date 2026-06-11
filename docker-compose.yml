@@ -38,6 +38,22 @@ services:
       db:
         condition: service_healthy
 
+  watcher:
+    build:
+      context: ./backend
+      network: host
+    command: python -m app.jobs.watch
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sailready_app:${APP_DB_PASSWORD}@db:5432/sailready
+      DATABASE_URL_ADMIN: postgresql+asyncpg://sailready:${POSTGRES_PASSWORD}@db:5432/sailready
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
   mailpit:
     image: axllent/mailpit
     ports:
