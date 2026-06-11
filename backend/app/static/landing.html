@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SailReady — Plan the sail. Sail the plan.</title>
-<meta name="description" content="The trip-planning engine that watches your weather window — wind, tide, current, depth, and the trip home.">
+<meta name="description" content="The trip-planning engine that watches your weather window — wind, tide, current, and depth, sampled where you'll be, when you'll be there.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpolygon points='12,46 27,20 27,46' fill='%2352d273'/%3E%3Cpolygon points='31,46 31,10 52,46' fill='%234cc9f0'/%3E%3Cpath d='M8 53 q8 -5 16 0 t16 0 t16 0' stroke='%233a506b' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   * { box-sizing:border-box; margin:0; padding:0; }
@@ -35,10 +35,6 @@
   }
   .cta:hover { transform:translateY(-2px); box-shadow:0 10px 34px rgba(76,201,240,.45); }
   .cta svg { flex:none; }
-  .verdicts { margin-top:38px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
-  .chip { font-size:12.5px; font-weight:600; padding:6px 13px; border-radius:999px; border:1px solid #2b3f5c; color:var(--muted); background:rgba(27,38,59,.6); }
-  .chip.g { color:#52d273; border-color:#2a5c3a; } .chip.y { color:#ffd166; border-color:#5c532a; }
-  .chip.o { color:#ff9442; border-color:#5c452a; } .chip.r { color:#ff8da0; border-color:#5c2a38; }
   footer { position:absolute; bottom:18px; width:100%; text-align:center; font-size:12px; color:#5b7089; z-index:2; }
   /* layered waves */
   .waves { position:absolute; bottom:0; left:0; width:200%; height:160px; z-index:1; opacity:.5; }
