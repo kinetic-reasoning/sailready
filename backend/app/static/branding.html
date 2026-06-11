@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SailReady — branding concepts</title>
+<style>
+  :root { --bg:#0d1b2a; --panel:#1b263b; --text:#e0e1dd; --muted:#9fb0c3; --accent:#4cc9f0; --green:#52d273; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:-apple-system,system-ui,sans-serif; background:var(--bg); color:var(--text); padding:28px; }
+  h1 { font-size:22px; margin-bottom:4px; }
+  .sub { color:var(--muted); margin-bottom:26px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin:30px 0 12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:16px; }
+  .card { background:var(--panel); border-radius:12px; padding:20px; }
+  .card h3 { font-size:15px; margin:14px 0 4px; }
+  .card p { font-size:12.5px; color:var(--muted); line-height:1.5; }
+  .logo-row { display:flex; align-items:center; gap:14px; background:#0d1b2a; border-radius:8px; padding:18px; justify-content:center; }
+  .wordmark { font-size:26px; font-weight:800; letter-spacing:-.02em; }
+  .wordmark .lite { font-weight:300; }
+  .motto { background:var(--panel); border-radius:10px; padding:14px 18px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:baseline; gap:14px; }
+  .motto b { font-size:16px; }
+  .motto span { color:var(--muted); font-size:12.5px; text-align:right; }
+  .fav { outline:2px solid var(--accent); }
+</style>
+</head>
+<body>
+<h1>SailReady — branding concepts</h1>
+<div class="sub">Same palette as the app. Every logo works at favicon size and in monochrome.</div>
+
+<h2>Logo concepts</h2>
+<div class="grid">
+
+  <div class="card fav">
+    <div class="logo-row">
+      <svg width="72" height="72" viewBox="0 0 64 64">
+        <polygon points="25,52 48,17 48,52" fill="#4cc9f0"/>
+        <path d="M10 37 L22 50 L46 14" stroke="#52d273" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="wordmark"><span class="lite">sail</span>ready</div>
+    </div>
+    <h3>A · The Check-Sail ★</h3>
+    <p>The green checkmark's long stroke becomes the luff of the sail — the whole product in one glyph: <i>conditions checked, sail set</i>. Reads at 16px, works one-color, and the check is literally the Go verdict.</p>
+  </div>
+
+  <div class="card">
+    <div class="logo-row">
+      <svg width="72" height="72" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="27" fill="none" stroke="#3a506b" stroke-width="3"/>
+        <polygon points="32,8 36,16 28,16" fill="#e0e1dd"/>
+        <polygon points="25,42 40,16 40,42" fill="#4cc9f0"/>
+        <path d="M18 48 q7 -5 14 0 t14 0" stroke="#52d273" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div class="wordmark"><span class="lite">sail</span>ready</div>
+    </div>
+    <h3>B · The Compass Badge</h3>
+    <p>Sail and waterline inside a bearing ring with a north tick. Most "marine app" of the set — instantly trustworthy, slightly more conventional. Great as an iOS app icon.</p>
+  </div>
+
+  <div class="card">
+    <div class="logo-row">
+      <svg width="72" height="72" viewBox="0 0 64 64">
+        <polygon points="12,46 27,20 27,46" fill="#52d273"/>
+        <polygon points="31,46 31,10 52,46" fill="#4cc9f0"/>
+        <path d="M8 53 q8 -5 16 0 t16 0 t16 0" stroke="#3a506b" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div class="wordmark"><span class="lite">sail</span>ready</div>
+    </div>
+    <h3>C · Twin Sails</h3>
+    <p>Jib and main over a waterline — green and blue echo the score colors. Friendly and balanced; the most "cruising" of the set, least conceptual.</p>
+  </div>
+
+  <div class="card">
+    <div class="logo-row">
+      <svg width="72" height="72" viewBox="0 0 64 64">
+        <line x1="10" y1="8" x2="10" y2="56" stroke="#3a506b" stroke-width="4" stroke-linecap="round"/>
+        <polygon points="14,12 56,24 14,40" fill="#4cc9f0"/>
+        <path d="M24 20 L30 27 L44 16" stroke="#0d1b2a" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="wordmark"><span class="lite">sail</span>ready</div>
+    </div>
+    <h3>D · The Burgee</h3>
+    <p>A yacht-club pennant with the check knocked out of it. Burgees mean membership and identity — nice undertone for an eventual community of skippers. Flag + check = "cleared to sail."</p>
+  </div>
+
+  <div class="card">
+    <div class="logo-row">
+      <div class="wordmark" style="font-size:30px">
+        s<span class="lite">ail</span>re<svg width="22" height="24" viewBox="0 0 32 36" style="vertical-align:-2px"><polygon points="4,34 28,34 16,4" fill="#4cc9f0"/><rect x="4" y="36" width="24" height="0"/><path d="M2 35 h28" stroke="#52d273" stroke-width="3" stroke-linecap="round"/></svg>dy
+      </div>
+    </div>
+    <h3>E · Sail-as-A Wordmark</h3>
+    <p>Pure wordmark — the A in "ready" is a sail over a green waterline. No separate icon to manage; weakest at favicon size (you'd cut just the sail-A out for that).</p>
+  </div>
+
+</div>
+
+<h2>Motto candidates</h2>
+<div class="motto fav"><b>Plan the sail. Sail the plan.</b><span>old sailing proverb, owned. Says planning AND the underway co-pilot. ★</span></div>
+<div class="motto"><b>Fair winds, by the numbers.</b><span>ties to the verdict vocabulary; data-confident</span></div>
+<div class="motto"><b>Sail smarter. Come home on time.</b><span>speaks straight to the return-leg problem</span></div>
+<div class="motto"><b>Your window, watched.</b><span>the airline model in three words</span></div>
+<div class="motto"><b>Every trip, weather-watched.</b><span>watcher-centric alternative</span></div>
+<div class="motto"><b>Know your window.</b><span>shortest; the time-budget insight distilled</span></div>
+
+<h2>Buttons (as now live in the app)</h2>
+<div class="card" style="max-width:560px">
+  <div style="display:flex; gap:10px; margin-bottom:10px">
+    <button style="cursor:pointer; padding:8px 14px; border-radius:8px; font-weight:600; background:linear-gradient(135deg,#4cc9f0,#3a86ff); border:none; color:#04263b">🔄 Check conditions now</button>
+    <button style="cursor:pointer; padding:8px 14px; border-radius:8px; font-weight:600; background:transparent; border:1px solid #3a506b; color:#e0e1dd">Redraw route</button>
+    <button style="cursor:pointer; padding:8px 14px; border-radius:8px; font-weight:600; background:transparent; border:1px solid #7a3344; color:#ff8da0">Delete</button>
+    <button style="cursor:pointer; padding:6px 11px; border-radius:9px; background:transparent; border:1px solid #3a506b; color:#e0e1dd">🔔</button>
+  </div>
+  <p style="font-size:12.5px;color:#9fb0c3">Primary = gradient fill (one per view). Everything else = quiet outline that lights up accent on hover. Destructive = red outline, never a red slab.</p>
+</div>
+
+</body>
+</html>

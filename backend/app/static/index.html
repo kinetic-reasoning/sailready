@@ -18,9 +18,16 @@
   #map { flex:1; }
   .measure { display:flex; justify-content:space-between; font-size:12.5px; padding:3px 6px; border-radius:4px; background:#22324a; margin-bottom:4px; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:6px; }
-  select,input,button,textarea { width:100%; padding:8px; border-radius:6px; border:1px solid #3a506b; background:#0d1b2a; color:var(--text); font-size:14px; }
-  button { cursor:pointer; background:#274060; border:none; font-weight:600; }
-  button.primary { background:var(--accent); color:#06283d; }
+  select,input,textarea { width:100%; padding:8px; border-radius:8px; border:1px solid #3a506b; background:#0d1b2a; color:var(--text); font-size:14px; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); }
+  button { width:100%; cursor:pointer; padding:8px 12px; border-radius:8px; font-size:13.5px; font-weight:600; letter-spacing:.01em;
+           background:transparent; border:1px solid #3a506b; color:var(--text); transition:border-color .15s, color .15s, background .15s; }
+  button:hover { border-color:var(--accent); color:var(--accent); background:rgba(76,201,240,.07); }
+  button.primary { background:linear-gradient(135deg, #4cc9f0, #3a86ff); border:none; color:#04263b; }
+  button.primary:hover { filter:brightness(1.12); color:#04263b; }
+  button.danger { border-color:#7a3344; color:#ff8da0; background:transparent; }
+  button.danger:hover { border-color:#ff5d5d; color:#ff5d5d; background:rgba(255,93,93,.07); }
+  button.icon { width:auto; padding:6px 11px; font-size:15px; border-radius:9px; }
   button:disabled { opacity:.45; cursor:default; }
   .row { display:flex; gap:8px; } .row > * { flex:1; }
   .trip-item { padding:8px 10px; border-radius:6px; background:#22324a; margin-bottom:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
@@ -52,13 +59,13 @@
 <header>
   <h1>⛵ SailReady</h1><span class="tag">prototype — local dev</span>
   <span id="status" class="tag" style="margin-left:auto"></span>
-  <button id="bellBtn" style="width:auto; padding:6px 10px; position:relative">🔔<span id="bellCount" style="display:none; position:absolute; top:-4px; right:-4px; background:#ff5d5d; color:#fff; border-radius:9px; font-size:10px; padding:1px 5px"></span></button>
-  <button id="profileBtn" style="width:auto; padding:6px 12px">⚙ Settings</button>
+  <button id="bellBtn" class="icon" style="position:relative">🔔<span id="bellCount" style="display:none; position:absolute; top:-4px; right:-4px; background:#ff5d5d; color:#fff; border-radius:9px; font-size:10px; padding:1px 5px"></span></button>
+  <button id="profileBtn" class="icon">⚙ Settings</button>
 </header>
 <div id="bellPanel" style="display:none; position:absolute; top:48px; right:12px; width:340px; max-height:60vh; overflow:auto; background:var(--panel); border:1px solid #3a506b; border-radius:8px; padding:10px; z-index:1400">
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
     <h2 style="margin:0">Alerts</h2>
-    <button id="bellReadAll" style="width:auto; padding:3px 8px; font-size:11px">mark all read</button>
+    <button id="bellReadAll" class="icon" style="font-size:11px">mark all read</button>
   </div>
   <div id="bellList"></div>
 </div>
@@ -117,7 +124,7 @@
         <div class="row">
           <button id="statusBtn"></button>
           <button id="redrawBtn">Redraw route</button>
-          <button id="delBtn" style="background:#5c2330">Delete</button>
+          <button id="delBtn" class="danger">Delete</button>
         </div>
         <div id="redrawBar" style="display:none; margin-top:6px">
           <span class="hint">Click map to drop new pins: <b id="redrawCount">0</b></span>
@@ -154,7 +161,7 @@
   <div style="max-width:580px; margin:28px auto; background:var(--panel); border-radius:10px; padding:18px">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
       <h2 style="font-size:15px; margin:0">Boat &amp; Profile</h2>
-      <button id="profClose" style="width:auto; padding:4px 12px">✕</button>
+      <button id="profClose" class="icon">✕</button>
     </div>
 
     <h2>You</h2>
@@ -176,7 +183,7 @@
     <div id="bForm" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px"></div>
     <div class="row" style="margin-top:10px">
       <button id="bDefault">Set as default</button>
-      <button id="bDelete" style="background:#5c2330">Delete</button>
+      <button id="bDelete" class="danger">Delete</button>
       <button id="bSave" class="primary">Save &amp; close</button>
     </div>
     <span class="hint" id="bHint"></span>
