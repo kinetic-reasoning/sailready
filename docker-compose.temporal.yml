@@ -1,0 +1,106 @@
+# SailReady + Temporal — local demo stack.
+#
+#   docker compose -f docker-compose.temporal.yml up -d --build
+#   docker compose -f docker-compose.temporal.yml run --rm api alembic upgrade head
+#
+# App:          http://localhost:8000/app   (AUTH_MODE=dev, you are the dev user)
+# Temporal UI:  http://localhost:8080       (watch TripWorkflow execute, time-travel history)
+# Mailpit:      http://localhost:8025
+#
+# The Temporal worker REPLACES the polling watcher here.
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: sailready
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sailready
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sailready -d sailready"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- Temporal server + its own postgres + web UI -------------------------
+  temporal-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD}
+      POSTGRES_DB: temporal
+    volumes: ["temporaldata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD}
+      POSTGRES_SEEDS: temporal-db
+    ports: ["127.0.0.1:7233:7233"]
+    depends_on:
+      temporal-db:
+        condition: service_healthy
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:8080
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on: [temporal]
+
+  # --- our services --------------------------------------------------------
+  api:
+    build:
+      context: ./backend
+      network: host
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sailready_app:${APP_DB_PASSWORD}@db:5432/sailready
+      DATABASE_URL_ADMIN: postgresql+asyncpg://sailready:${POSTGRES_PASSWORD}@db:5432/sailready
+      AUTH_MODE: dev
+      DEV_USER_EMAIL: ken.e.holden@gmail.com
+      DEV_USER_NAME: Ken Holden
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      TEMPORAL_ENABLED: "true"
+      TEMPORAL_TARGET: temporal:7233
+    volumes: ["./backend:/app"]
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+      temporal: {condition: service_started}
+
+  temporal-worker:
+    build:
+      context: ./backend
+      network: host
+    command: python -m app.temporal.worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sailready_app:${APP_DB_PASSWORD}@db:5432/sailready
+      DATABASE_URL_ADMIN: postgresql+asyncpg://sailready:${POSTGRES_PASSWORD}@db:5432/sailready
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      TEMPORAL_TARGET: temporal:7233
+    volumes: ["./backend:/app"]
+    depends_on:
+      db: {condition: service_healthy}
+      temporal: {condition: service_started}
+
+  mailpit:
+    image: axllent/mailpit
+    ports: ["127.0.0.1:1025:1025", "8025:8025"]
+
+volumes:
+  pgdata:
+  temporaldata:

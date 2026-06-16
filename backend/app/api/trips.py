@@ -23,6 +23,39 @@ from app.schemas import (
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
+
+async def _sync_watch(trip: Trip) -> None:
+    """Mirror a trip's lifecycle into its Temporal workflow (no-op if disabled).
+    Imported lazily so the temporal SDK isn't a hard dependency of the API."""
+    from app.config import settings
+
+    if not settings.temporal_enabled:
+        return
+    from app.temporal.client import start_or_update_trip_watch
+    from app.temporal.shared import TripParams
+
+    await start_or_update_trip_watch(
+        TripParams(
+            trip_id=str(trip.id),
+            departure_time=trip.departure_time.isoformat(),
+            return_by_time=trip.return_by_time.isoformat(),
+        )
+    )
+
+
+async def _cancel_watch(trip_id: uuid.UUID) -> None:
+    from app.config import settings
+
+    if not settings.temporal_enabled:
+        return
+    from app.temporal.client import signal_cancel
+
+    try:
+        await signal_cancel(str(trip_id))
+    except Exception:
+        pass  # no running workflow — fine
+
+
 VALID_TRANSITIONS: dict[str, set[str]] = {
     "planning": {"active", "cancelled"},
     "active": {"completed", "cancelled"},
@@ -202,6 +235,8 @@ async def update_trip_status(
     trip.status = payload.status
     trip.updated_at = func.now()
     await db.flush()
+    if payload.status in ("cancelled", "completed"):
+        await _cancel_watch(trip_id)
     trip = await get_owned_trip(trip_id, db)
     return Envelope[TripOut](data=trip_out(trip))
 
@@ -261,7 +296,8 @@ async def replace_waypoints(
     trip.routing_type = "manual"
     trip.updated_at = func.now()
     await db.flush()
-    # Rescore triggers here once the scoring engine lands (build sequence step 4)
-
+    # The trip is now scorable — start (or update) its durable watch workflow.
     trip = await get_owned_trip(trip_id, db)
+    await _sync_watch(trip)
+
     return Envelope[list[WaypointOut]](data=[waypoint_out(wp) for wp in trip.waypoints])
