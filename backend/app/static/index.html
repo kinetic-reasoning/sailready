@@ -621,15 +621,15 @@ $('editForm').onsubmit = async e => {
 
 let redrawMode = false;
 $('redrawBtn').onclick = () => {
-  redrawMode = true; newTripPins = []; routeLayer.clearLayers();
+  redrawMode = true; newTripPins = []; routeLayer.clearLayers(); scoreLayer.clearLayers();
   $('redrawBar').style.display=''; $('redrawCount').textContent='0';
 };
-$('redrawCancel').onclick = () => { redrawMode=false; $('redrawBar').style.display='none'; drawRoute(selectedTrip.waypoints); };
+$('redrawCancel').onclick = () => { redrawMode=false; newTripPins=[]; $('redrawBar').style.display='none'; drawRoute(selectedTrip.waypoints); };
 $('redrawSave').onclick = async () => {
   if (newTripPins.length < 2) { status('Need at least 2 pins'); return; }
   try {
     await api(`/trips/${selectedTrip.id}/waypoints`, {method:'PUT', body: JSON.stringify({waypoints:newTripPins, expected_updated_at:selectedTrip.updated_at})});
-    redrawMode=false; $('redrawBar').style.display='none';
+    redrawMode=false; newTripPins=[]; $('redrawBar').style.display='none';
     await selectTrip(selectedTrip.id); status('Route updated — re-score to update.');
   } catch(e) { status('Route save failed: '+e.message); }
 };
@@ -809,6 +809,7 @@ function redrawPins() {
 }
 function drawRouteFromPins() {
   routeLayer.clearLayers();
+  scoreLayer.clearLayers(); // also wipe any prior score overlay (colored legs/arrows)
   if (!newTripPins.length) return;
   L.polyline(newTripPins.map(p=>[p.lat,p.lon]), {color:'#4cc9f0', dashArray:'6 6'}).addTo(routeLayer);
   newTripPins.forEach((p,i)=> L.circleMarker([p.lat,p.lon],{radius:6,color:i===0?'#52d273':'#4cc9f0',fillOpacity:.9}).addTo(routeLayer));
