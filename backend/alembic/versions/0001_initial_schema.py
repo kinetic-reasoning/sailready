@@ -7,6 +7,8 @@ Create Date: 2026-06-09
 Statements are executed one at a time (asyncpg cannot run multi-statement
 strings through prepared statements).
 """
+import os
+
 from alembic import op
 
 revision = "0001"
@@ -352,8 +354,15 @@ DOWNGRADE_STATEMENTS = [
 
 
 def upgrade() -> None:
+    # The app role's password is injected from the environment (never committed).
+    # Set APP_DB_PASSWORD in your .env (see .env.example); compose passes it through.
+    app_pw = os.environ.get("APP_DB_PASSWORD")
+    if not app_pw:
+        raise RuntimeError(
+            "APP_DB_PASSWORD must be set so the sailready_app DB role can be created"
+        )
     for statement in UPGRADE_STATEMENTS:
-        op.execute(statement)
+        op.execute(statement.replace("__APP_DB_PASSWORD__", app_pw))
 
 
 def downgrade() -> None:
