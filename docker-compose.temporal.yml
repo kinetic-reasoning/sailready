@@ -68,6 +68,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://sailready_app:${APP_DB_PASSWORD}@db:5432/sailready
       DATABASE_URL_ADMIN: postgresql+asyncpg://sailready:${POSTGRES_PASSWORD}@db:5432/sailready
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
       AUTH_MODE: dev
       DEV_USER_EMAIL: ken.e.holden@gmail.com
       DEV_USER_NAME: Ken Holden
