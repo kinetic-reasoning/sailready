@@ -12,10 +12,12 @@ what makes the automatic retries safe.
 import os
 from dataclasses import dataclass
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from app.engine.runner import rescore_trip
 from app.models import Notification, Trip
@@ -47,6 +49,28 @@ class RescoreResult:
     status: str | None = None
 
 
+async def _score(db, trip):
+    """Run the scorer, mapping upstream HTTP failures onto the right Temporal
+    retry semantics:
+
+      * 5xx / timeout / connection error  -> transient. Re-raised as-is, so the
+        activity's RetryPolicy keeps retrying (with backoff) until NOAA recovers.
+      * 4xx                               -> the request itself is bad (e.g. an
+        unknown tide station) and will never succeed. Raised as a non-retryable
+        ApplicationError so Temporal stops immediately instead of looping forever.
+    """
+    try:
+        return await rescore_trip(db, trip)
+    except httpx.HTTPStatusError as exc:
+        if 400 <= exc.response.status_code < 500:
+            raise ApplicationError(
+                f"upstream rejected request ({exc.response.status_code}) for {exc.request.url}",
+                type="UpstreamClientError",
+                non_retryable=True,
+            ) from exc
+        raise  # 5xx — transient, let the RetryPolicy ride it out
+
+
 async def _load_trip(db, trip_id: str) -> Trip | None:
     return (
         await db.execute(
@@ -65,7 +89,7 @@ async def rescore_trip_activity(trip_id: str) -> RescoreResult:
             if trip is None or not trip.waypoints:
                 activity.logger.info(f"trip {trip_id} not scorable yet")
                 return RescoreResult(trip_id=trip_id, found=False)
-            result = await rescore_trip(db, trip)
+            result = await _score(db, trip)
             return RescoreResult(
                 trip_id=trip_id,
                 found=True,
@@ -90,7 +114,7 @@ async def recompute_copilot_activity(trip_id: str, lat: float, lon: float) -> Re
             trip = await _load_trip(db, trip_id)
             if trip is None or not trip.waypoints:
                 return RescoreResult(trip_id=trip_id, found=False)
-            result = await rescore_trip(db, trip)
+            result = await _score(db, trip)
             activity.logger.info(
                 f"co-pilot {trip_id} @ {lat:.4f},{lon:.4f}: score {result.score}"
             )

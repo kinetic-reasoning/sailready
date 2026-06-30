@@ -55,8 +55,8 @@ services:
     image: temporalio/ui:2.31.2
     environment:
       TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: http://localhost:8080
-    ports: ["127.0.0.1:8080:8080"]
+      TEMPORAL_CORS_ORIGINS: http://localhost:8080,http://thelio:8080
+    ports: ["8080:8080"]
     depends_on: [temporal]
 
   # --- our services --------------------------------------------------------

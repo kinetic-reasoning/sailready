@@ -22,6 +22,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import ActivityError
 
 with workflow.unsafe.imports_passed_through():
     from app.temporal.activities import (
@@ -36,7 +37,12 @@ ACTIVITY_RETRY = RetryPolicy(
     initial_interval=timedelta(seconds=2),
     backoff_coefficient=2.0,
     maximum_interval=timedelta(minutes=5),
-    maximum_attempts=6,  # NOAA/Open-Meteo flap; ride it out, don't fail the trip
+    # Unlimited attempts: a NOAA/Open-Meteo outage is transient — keep retrying
+    # (capped at 5-min backoff) until the upstream recovers, so a brief blip
+    # cannot kill a multi-day watch. Genuinely permanent faults (e.g. a 4xx bad
+    # request) are raised by the activity as a non-retryable ApplicationError,
+    # which stops retries regardless of this cap.
+    maximum_attempts=0,
 )
 # Keep event history bounded: after this many rechecks, Continue-As-New.
 RECHECKS_BEFORE_CONTINUE = 200
@@ -50,6 +56,7 @@ class TripWorkflow:
         self._latest_position: tuple[float, float] | None = None
         self._last: RescoreResult | None = None
         self._phase = "planning"
+        self._degraded = False  # last recheck failed permanently (upstream rejected)
 
     # ---- signals: asynchronous events INTO the running workflow --------------
     @workflow.signal
@@ -72,6 +79,7 @@ class TripWorkflow:
         return {
             "phase": self._phase,
             "cancelled": self._cancelled,
+            "degraded": self._degraded,
             "score": self._last.score if self._last else None,
             "feasible": self._last.feasible if self._last else None,
             "turn_around_deadline": self._last.turn_around_deadline if self._last else None,
@@ -84,14 +92,25 @@ class TripWorkflow:
 
         # ---- PLANNING / PRE-LAUNCH: recheck on a tightening cadence ----------
         while workflow.now() < parse(self._params.return_by_time) and not self._cancelled:
-            self._last = await workflow.execute_activity(
-                rescore_trip_activity,
-                self._params.trip_id,
-                start_to_close_timeout=timedelta(seconds=90),
-                retry_policy=ACTIVITY_RETRY,
-            )
-            if self._last.status in ("completed", "cancelled"):
-                return
+            try:
+                self._last = await workflow.execute_activity(
+                    rescore_trip_activity,
+                    self._params.trip_id,
+                    start_to_close_timeout=timedelta(seconds=90),
+                    retry_policy=ACTIVITY_RETRY,
+                )
+                self._degraded = False
+                if self._last.status in ("completed", "cancelled"):
+                    return
+            except ActivityError:
+                # Transient faults retry forever (see ACTIVITY_RETRY), so we only
+                # reach here on a non-retryable error. Don't kill a multi-day
+                # watch over one bad recheck — flag it and try again at the next
+                # timer; the next cycle clears the flag if scoring recovers.
+                self._degraded = True
+                workflow.logger.warning(
+                    "rescore failed (non-retryable) — skipping this cycle, watch continues"
+                )
 
             now = workflow.now()
             departure = parse(self._params.departure_time)
@@ -131,14 +150,21 @@ class TripWorkflow:
                 break
             lat, lon = self._latest_position or (0.0, 0.0)
             self._latest_position = None
-            self._last = await workflow.execute_activity(
-                recompute_copilot_activity,
-                args=[self._params.trip_id, lat, lon],
-                start_to_close_timeout=timedelta(seconds=90),
-                retry_policy=ACTIVITY_RETRY,
-            )
-            if self._last.status in ("completed", "cancelled"):
-                break
+            try:
+                self._last = await workflow.execute_activity(
+                    recompute_copilot_activity,
+                    args=[self._params.trip_id, lat, lon],
+                    start_to_close_timeout=timedelta(seconds=90),
+                    retry_policy=ACTIVITY_RETRY,
+                )
+                self._degraded = False
+                if self._last.status in ("completed", "cancelled"):
+                    break
+            except ActivityError:
+                self._degraded = True
+                workflow.logger.warning(
+                    "co-pilot recompute failed (non-retryable) — will retry next cycle"
+                )
 
         # ---- DEBRIEF --------------------------------------------------------
         self._phase = "debrief"
